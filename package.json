@@ -1,0 +1,27 @@
+{
+  "name": "i18n-pipeline",
+  "version": "0.1.0",
+  "description": "Minimal CLI for scanning, extracting, and replacing Chinese text in source files.",
+  "type": "module",
+  "bin": {
+    "i18n": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli/index.js",
+    "scan": "node dist/cli/index.js scan",
+    "extract": "node dist/cli/index.js extract",
+    "replace": "node dist/cli/index.js replace",
+    "replace:dry": "node dist/cli/index.js replace --dry-run",
+    "test": "node tests/regression.mjs"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "tsx": "^3.14.0",
+    "typescript": "^5.9.3"
+  }
+}
