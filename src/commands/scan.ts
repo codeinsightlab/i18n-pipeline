@@ -2,7 +2,17 @@ import { collectSourceFiles } from "../core/files.js";
 import type { CommandOptions } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
 import { scanProject } from "../scanner/scan.js";
-import { buildScanDetails, countSourceFiles, createBaseReport, writeReport } from "./shared.js";
+import {
+  buildMatchedRuleDistribution,
+  buildScanDetails,
+  countExtractableMatches,
+  countPolicySkippedMatches,
+  countReplaceableMatches,
+  countScriptUnsupportedMatches,
+  countSourceFiles,
+  createBaseReport,
+  writeReport
+} from "./shared.js";
 
 export function runScanCommand(options: CommandOptions, logger: Logger): number {
   logger.debug(`scan targetDir=${options.targetDir}`);
@@ -18,6 +28,11 @@ export function runScanCommand(options: CommandOptions, logger: Logger): number 
     replacedCount: 0,
     skippedCount: 0,
     skippedReasons: {},
+    extractableCount: countExtractableMatches(matches),
+    replaceableCount: countReplaceableMatches(matches),
+    policySkippedCount: countPolicySkippedMatches(matches),
+    scriptUnsupportedCount: countScriptUnsupportedMatches(matches),
+    matchedRuleDistribution: buildMatchedRuleDistribution(matches),
     changedFiles: [],
     unchangedFiles: allFiles,
     keyReusedCount: 0,
@@ -31,7 +46,10 @@ export function runScanCommand(options: CommandOptions, logger: Logger): number 
   }
 
   for (const match of matches) {
-    logger.info(`${match.filePath.replace(`${process.cwd()}/`, "")}:${match.line}:${match.column}  ${match.text}`);
+    const skipTag = match.skipReason ? ` [skip:${match.skipReason}]` : "";
+    logger.info(
+      `${match.filePath.replace(`${process.cwd()}/`, "")}:${match.line}:${match.column}  [${match.contextType}]${skipTag} ${match.text}`
+    );
   }
 
   logger.info("");

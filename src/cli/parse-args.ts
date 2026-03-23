@@ -49,10 +49,22 @@ function buildParsedArgs(
   const targetDir = readFlagValue(args, "--dir") ?? process.cwd();
   const outputFile = readFlagValue(args, "--output") ?? path.resolve(process.cwd(), "i18n/zh.json");
   const reportFile = readFlagValue(args, "--report");
-  const extractMode = readFlagValue(args, "--mode") ?? "overwrite";
+  const resourceStructure = readFlagValue(args, "--structure") ?? "single";
+  const extractMode = readFlagValue(args, "--mode") ?? "merge";
+  const gitCheck = readFlagValue(args, "--git-check") ?? "warn";
+
+  if (!isResourceStructure(resourceStructure)) {
+    throw new CliUsageError(`Invalid --structure value: ${resourceStructure}. Use single or module-dir.`);
+  }
 
   if (!isExtractMode(extractMode)) {
     throw new CliUsageError(`Invalid --mode value: ${extractMode}. Use overwrite, merge, or clean.`);
+  }
+
+  const normalizedExtractMode = normalizeExtractMode(extractMode);
+
+  if (!isGitCheckMode(gitCheck)) {
+    throw new CliUsageError(`Invalid --git-check value: ${gitCheck}. Use warn, strict, or off.`);
   }
 
   return {
@@ -65,15 +77,36 @@ function buildParsedArgs(
       outputFile: path.resolve(outputFile),
       dryRun: args.includes("--dry-run"),
       debug: args.includes("--debug"),
-      extractMode,
+      writeResources: true,
+      resourceStructure,
+      extractMode: normalizedExtractMode,
+      gitCheck,
+      explicitConfig: {
+        resourceStructure: args.includes("--structure"),
+        extractMode: args.includes("--mode"),
+        gitCheck: args.includes("--git-check")
+      },
       reportFile: reportFile ? path.resolve(reportFile) : undefined
     }
   };
 }
 
 function validateArgs(args: string[]): void {
-  const valuedFlags = ["--dir", "--output", "--report", "--mode"];
-  const allowedFlags = new Set(["--dir", "--output", "--report", "--mode", "--dry-run", "--debug", "--help", "-h", "--version", "-v"]);
+  const valuedFlags = ["--dir", "--output", "--report", "--structure", "--mode", "--git-check"];
+  const allowedFlags = new Set([
+    "--dir",
+    "--output",
+    "--report",
+    "--structure",
+    "--mode",
+    "--git-check",
+    "--dry-run",
+    "--debug",
+    "--help",
+    "-h",
+    "--version",
+    "-v"
+  ]);
 
   for (const flag of valuedFlags) {
     const index = args.indexOf(flag);
@@ -106,6 +139,18 @@ function isCommandName(value: string): value is CommandName {
 
 function isExtractMode(value: string): value is CommandOptions["extractMode"] {
   return value === "overwrite" || value === "merge" || value === "clean";
+}
+
+function normalizeExtractMode(value: CommandOptions["extractMode"]): CommandOptions["extractMode"] {
+  return value === "overwrite" ? "merge" : value;
+}
+
+function isResourceStructure(value: string): value is CommandOptions["resourceStructure"] {
+  return value === "single" || value === "module-dir";
+}
+
+function isGitCheckMode(value: string): value is CommandOptions["gitCheck"] {
+  return value === "warn" || value === "strict" || value === "off";
 }
 
 export function ensureDirProvided(argv: string[]): void {

@@ -4,21 +4,28 @@ import { extractEntries } from "../extractor/extract.js";
 import { replaceProject } from "../replacer/replace.js";
 import { scanProject } from "../scanner/scan.js";
 import {
+  buildMatchedRuleDistribution,
   buildReplaceDetails,
+  countExtractableMatches,
+  countPolicySkippedMatches,
+  countReplaceableMatches,
+  countScriptUnsupportedMatches,
   countSourceFiles,
   createBaseReport,
-  readZhJson,
   uniqueStrings,
   writeReport
 } from "./shared.js";
 import { collectSourceFiles } from "../core/files.js";
+import { loadResourceMap } from "../core/resources.js";
 
 export function runReplaceCommand(options: CommandOptions, logger: Logger): number {
-  logger.debug(`replace targetDir=${options.targetDir} output=${options.outputFile} dryRun=${String(options.dryRun)}`);
+  logger.debug(
+    `replace targetDir=${options.targetDir} output=${options.outputFile} dryRun=${String(options.dryRun)} structure=${options.resourceStructure}`
+  );
 
   const matches = scanProject(options.targetDir);
-  const existingZh = readZhJson(options.outputFile);
-  const entries = extractEntries(matches, existingZh, options.targetDir);
+  const existingResources = loadResourceMap(options.outputFile, options.resourceStructure);
+  const entries = extractEntries(matches, existingResources, options.targetDir, options.resourceStructure);
   const report = replaceProject(options.targetDir, entries, options.dryRun);
   const reusedCount = entries.filter((entry) => entry.reused).length;
   const createdCount = entries.length - reusedCount;
@@ -56,6 +63,11 @@ export function runReplaceCommand(options: CommandOptions, logger: Logger): numb
     replacedCount: report.changes.length,
     skippedCount: report.skipped.length,
     skippedReasons: report.skippedByReason,
+    extractableCount: countExtractableMatches(matches),
+    replaceableCount: countReplaceableMatches(matches),
+    policySkippedCount: countPolicySkippedMatches(matches),
+    scriptUnsupportedCount: countScriptUnsupportedMatches(matches),
+    matchedRuleDistribution: buildMatchedRuleDistribution(matches),
     changedFiles,
     unchangedFiles: report.unchangedFiles,
     keyReusedCount: reusedCount,

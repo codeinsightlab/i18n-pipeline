@@ -8,6 +8,7 @@
 
 - `src/core/files.ts`: 文件收集和目录处理
 - `src/core/keygen.ts`: 简单 key 生成
+- `src/core/resources.ts`: 资源文件加载、扁平化和写回
 - `src/core/rules.ts`: 当前版本的保守匹配和跳过原因规则
 - `src/core/types.ts`: 命令、报告和替换数据结构
 
@@ -43,6 +44,25 @@
 - 当没有现成 key 时，新文本按稳定排序分配新 key，避免文件顺序变化导致 key 漂移
 - `replace` 第二次执行时应保持幂等，不应产生新的代码修改
 
+## Context Classification
+
+当前版本在扫描后会先给中文候选打上下文分类，再决定是否可提取、是否可替换。
+
+- `js_string`: JS/TS 中可安全处理的普通字符串字面量
+- `template_attr_static`: Vue template 中的静态属性值，例如 `title="保存"`
+- `template_text_static`: Vue template 中的静态文本节点，例如 `<span>保存</span>`
+- `template_expr`: Vue template 中的简单插值字符串，例如 `{{ "保存" }}`
+- `template_string`: 模板字符串，当前只进入 report，不参与提取或替换
+- `unsafe_skip`: 明确高风险或当前不处理的场景，例如 `console_call`、`object_key`、注释等
+
+这些分类会进入扫描结果和 report sample，字段包括：
+
+- `context_type`
+- `matched_rule`
+- `extractable`
+- `replaceable`
+- `skip_reason`
+
 ## Scan Output
 
 `scan` 除了逐条输出命中的候选，还会在结尾输出简洁摘要：
@@ -72,16 +92,17 @@ scan_count:
 
 - `plugins.auto_001`
 - `router.auto_001`
-- `system.auto_001`
+- `system.user.auto_001`
 
 规则说明：
 
-- `modulePrefix` 来自相对扫描目录下的第一层模块目录
+- `modulePrefix` 来自相对扫描目录下的业务路径前缀
 - 不直接使用完整物理路径
 - 如果文件直接位于扫描目录根下，没有明显第一层模块目录，则退回为 `module`
 - 相同原文优先复用已有 `zh.json` 里的 key
 - 只有新增原文才会分配新 key
 - 编号按模块前缀分别递增，例如 `plugins.auto_001`、`plugins.auto_002`
+- 新 key 会从当前模块已有最大序号继续递增，不会因为重扫重排旧 key
 - 稳定性优先于语义化命名，因此当前不做“不同原文自动合并 key”
 
 `modulePrefix` 提取示例：
@@ -91,27 +112,47 @@ scan_count:
   结果前缀：`plugins`
 - 文件：`src/router/index.ts`
   结果前缀：`router`
+- 文件：`src/views/system/user/index.vue`
+  结果前缀：`system.user`
 - 文件：`src/app.ts`
   结果前缀：`module`
+
+## Resource Structure
+
+当前支持两种资源输出结构：
+
+- `single`:
+  默认模式，输出到单文件，例如 `./i18n/zh.json`
+- `module-dir`:
+  按 key 的模块前缀拆分目录，例如：
+  - `system.user.auto_001` -> `./i18n/system/user/zh.json`
+  - `plugins.download.auto_002` -> `./i18n/plugins/download/zh.json`
+
+内部处理会先把资源统一加载成 `Map<key, text>`，`replace` 只依赖 key 到文本的扁平映射，不依赖资源文件的物理结构。
+在 `module-dir` 下，旧 key 复用会优先限制在当前模块内；相同文本不会跨模块复用别的模块 key。
 
 ## CLI
 
 ```bash
 npm run build
 node dist/cli/index.js scan --dir ./fixtures/realish --report ./output/scan-report.json
-node dist/cli/index.js extract --dir ./fixtures/realish --output ./i18n/zh.json --mode overwrite --report ./output/extract-report.json
+node dist/cli/index.js extract --dir ./fixtures/realish --output ./i18n/zh.json --report ./output/extract-report.json
+node dist/cli/index.js extract --dir ./fixtures/realish --output ./i18n/zh.json --structure module-dir
 node dist/cli/index.js replace --dir ./fixtures/realish --output ./output/realish.zh.json --report ./output/replace-report.json --dry-run
 ```
+
+`run` 和 `apply` 在传入 `--report` 时，会额外生成一份聚合总报告；控制台仍然保留摘要输出。
 
 ## Extract Mode
 
 `extract` 现在统一使用：
 
 ```bash
---mode overwrite|merge|clean
+--structure single|module-dir
+--mode merge|clean
 ```
 
-默认模式是 `overwrite`。如果不传 `--output`，默认输出到：
+默认模式是 `merge`。如果不传 `--output`，默认输出到：
 
 ```text
 ./i18n/zh.json
@@ -119,29 +160,28 @@ node dist/cli/index.js replace --dir ./fixtures/realish --output ./output/realis
 
 不存在时会自动创建 `i18n` 目录。
 
-三种模式的语义：
+两种模式的语义：
 
-- `overwrite`:
-  基于当前扫描结果生成完整 `zh.json`，最后覆盖写文件。
-  它仍然会读取旧 `zh.json`，但只用于复用已有 key，不会保留未命中的旧 key。
 - `merge`:
-  先按 `overwrite` 生成当前结果，再额外保留旧 `zh.json` 中未被当前扫描命中的 key。
+  主流程默认模式。
+  `single` 下会全局复用已有 key，为新文本追加新 key，并保留未命中的旧 key。
+  `module-dir` 下会仅在当前模块内复用已有 key，为新文本追加当前模块 key，并保留所有旧 key。
 - `clean`:
   不读取旧 `zh.json`，从头生成 key，最后覆盖写文件。
 
 适用场景：
 
-- `overwrite`:
-  日常迭代最常用，既能保持 key 稳定，又能清理掉当前代码里已经不再命中的旧 key。
 - `merge`:
-  适合暂时不想丢历史 key 的阶段性迁移。
+  日常迭代和真实项目长期维护的推荐模式，默认只增不删，更安全。
 - `clean`:
   适合第一次初始化或明确想重建 key 的情况。
 
 注意：
 
-- `overwrite` 是默认模式
-- `overwrite` 仍然会复用旧 key，并不是完全重建
+- `merge` 是默认模式
+- 主流程默认只增不删，不会自动删除旧 key
+- `module-dir` 下会从 `./i18n/**/zh.json` 加载旧资源并扁平化复用
+- `module-dir` 下旧 key 复用会优先限制在当前模块内，不会跨模块复用
 - 当前不支持根据不同原文自动合并 key
 
 ## Report
@@ -158,6 +198,11 @@ report 统一分成两层：
 - `replaced_count`: 当前命令实际可替换或计划替换的数量；`scan` 和 `extract` 固定为 `0`
 - `skipped_count`: 进入 replace 分析但因保守规则被跳过的数量；`scan` 和 `extract` 固定为 `0`
 - `skipped_reasons`: 按原因聚合的跳过统计；`scan` 和 `extract` 固定为空对象
+- `extractable_count`: 当前命中的候选里，允许进入 extract 的数量
+- `replaceable_count`: 当前命中的候选里，命中白名单且允许替换的数量
+- `policy_skipped_count`: 当前命中的候选里，进入 report 但被当前策略跳过的数量
+- `script_unsupported_count`: 当前命中的候选里，属于 `script_unsupported` 的数量
+- `matched_rule_distribution`: 按具体命中规则聚合的分布，例如 `template_el_button_text`、`script_rules_message`、`script_unsupported_confirm_concat`
 - `changed_files`: 本次命令会写入或计划写入的文件；`extract` 一般是语言包文件，`replace --dry-run` 是计划变更文件
 - `unchanged_files`: 本次命令未产生代码或资源改动的文件列表
 - `key_reused_count`: `extract` 或 `replace` 时复用已有 `zh.json` key 的文本数
@@ -170,6 +215,10 @@ report 统一分成两层：
 - `replaced_count`: 该文件中实际或计划替换数量
 - `skipped_count`: 该文件中被跳过的数量
 - `skipped_reasons`: 该文件的跳过原因分布
+- `extractable_count`: 该文件中允许进入 extract 的数量
+- `replaceable_count`: 该文件中命中白名单且允许替换的数量
+- `policy_skipped_count`: 该文件中进入 report 但被当前策略跳过的数量
+- `matched_rule_distribution`: 该文件中具体命中规则的分布
 - `review_priority`: 轻量人工审查优先级，仅有 `high / medium / low`
 - `review_notes`: 对优先级的简短说明
 - `samples`:
@@ -179,7 +228,7 @@ report 统一分成两层：
 
 - 只放少量样本，不做全量 trace
 - 每个文件的 `replaced` 和 `skipped` 样本都有限制，当前最多各 `3` 条
-- 每条样本尽量提供 `reason`、`text`、`line`、`snippet`
+- 每条样本尽量提供 `reason`、`text`、`line`、`snippet`，并补充 `context_type`、`matched_rule`、`extractable`、`replaceable`、`skip_reason`
 - `snippet` 只是轻量上下文，不保证是完整代码片段
 - 没有样本时可以省略 `samples`
 
@@ -259,8 +308,10 @@ node dist/cli/index.js replace \
 `apply` 的最小安全保护：
 
 - 如果当前目录位于 Git 仓库中，`apply` 执行前会检查工作区是否干净
-- 如果发现未提交改动，会输出明确警告
-- 当前版本默认只警告，不阻断执行
+- `--git-check` 支持三种模式：`warn`、`strict`、`off`
+- `warn` 是默认模式：如果发现未提交改动，会输出明确警告，但继续执行
+- `strict` 会在发现未提交改动时直接终止 `apply`
+- `off` 会完全跳过 Git 检查，不执行 Git 命令
 - 后续如果需要，可以在这个位置扩展更严格模式或导出 patch 的备份能力
 
 ## Exit Codes
