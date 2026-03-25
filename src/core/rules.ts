@@ -1,5 +1,4 @@
-import { DEFAULT_SCRIPT_TEMPLATES } from "./script-templates.js";
-import type { ContextType, MatchedRule, ScriptPatternType, ScriptTemplate, SkipReason } from "./types.js";
+import type { ContextType, MatchedRule, ScriptPatternType, ScriptRule, SkipReason } from "./types.js";
 
 export const CHINESE_STRING_LITERAL_RE = /(['"])((?:\\.|(?!\1).)*?[\u4e00-\u9fff]+(?:\\.|(?!\1).)*?)\1/g;
 export const SIMPLE_VUE_INTERPOLATION_RE = /{{\s*(['"])([^'"\\\n]*[\u4e00-\u9fff]+[^'"\\\n]*)\1\s*}}/g;
@@ -27,13 +26,13 @@ export function classifyJsLiteral(content: string, start: number, raw: string): 
   return classifyJsLiteralMatch(content, start, raw).skipReason ?? null;
 }
 
-export function collectControlledScriptLiterals(content: string): Map<number, ControlledScriptLiteral> {
+export function collectControlledScriptLiterals(content: string, scriptRules: ScriptRule[] = []): Map<number, ControlledScriptLiteral> {
   const controlled = new Map<number, ControlledScriptLiteral>();
 
-  // 受控表达式由内置模板声明驱动：
-  // 只负责定位“可替换的字符串片段”，不开放任意 DSL，不做 AST。
-  for (const template of DEFAULT_SCRIPT_TEMPLATES) {
-    collectTemplateControlledLiterals(content, template, controlled);
+  // 受控表达式由外部规则声明驱动：
+  // 内核只做固定 pattern 匹配与替换，不承载业务默认规则。
+  for (const rule of scriptRules) {
+    collectRuleControlledLiterals(content, rule, controlled);
   }
 
   return controlled;
@@ -64,11 +63,6 @@ export function classifyJsLiteralMatch(content: string, start: number, raw: stri
   if (isRulesMessage(content, start)) {
     // 白名单：rules 中 message。
     return buildAllowedClassification("script_rules_message", "js_string");
-  }
-
-  if (isTitleAssignment(content, start)) {
-    // 白名单：this.title = "中文"。
-    return buildAllowedClassification("script_this_title", "js_string");
   }
 
   if (isConfirmConcatCall(content, start, raw.length)) {
@@ -178,11 +172,6 @@ function isRulesMessage(content: string, start: number): boolean {
   return /\b(trigger|required|validator|pattern|min|max|type)\s*:/.test(after) || /\brules\b/.test(before);
 }
 
-function isTitleAssignment(content: string, start: number): boolean {
-  const before = content.slice(Math.max(0, start - 80), start);
-  return /(?:^|[^\w$.])this\.title\s*=\s*$/.test(before);
-}
-
 function isConfirmConcatCall(content: string, start: number, rawLength: number): boolean {
   const before = content.slice(Math.max(0, start - 80), start);
   const after = content.slice(start + rawLength, Math.min(content.length, start + rawLength + 120));
@@ -216,27 +205,60 @@ function buildSkippedClassification(
   };
 }
 
-function collectTemplateControlledLiterals(
+function collectRuleControlledLiterals(
   content: string,
-  template: ScriptTemplate,
+  rule: ScriptRule,
   controlled: Map<number, ControlledScriptLiteral>
 ): void {
-  const argTemplate = template.args[0];
+  if (rule.type === "assignment") {
+    collectAssignmentControlledLiterals(content, rule, controlled);
+  } else {
+    collectCallControlledLiterals(content, rule, controlled);
+  }
+}
 
-  if (!argTemplate || argTemplate.index !== 0) {
+function collectCallControlledLiterals(
+  content: string,
+  rule: Extract<ScriptRule, { type: "call" }>,
+  controlled: Map<number, ControlledScriptLiteral>
+): void {
+  const argRule = rule.args[0];
+  if (!argRule || argRule.index !== 0) {
     return;
   }
 
-  const callPattern = buildCallPattern(template.callee);
+  const callPattern = buildCallPattern(rule.callee);
 
   // callee 采用精确匹配；Phase 1 不支持模糊匹配/别名解析，优先保障可解释性。
   for (const match of content.matchAll(callPattern)) {
     const body = match[1] ?? "";
     const bodyOffset = (match.index ?? 0) + match[0].indexOf(body);
-    const literals = collectPatternLiterals(body, bodyOffset, template.id, argTemplate.pattern);
+    for (const pattern of argRule.patterns) {
+      const literals = collectPatternLiterals(body, bodyOffset, rule.id, pattern);
 
-    for (const literal of literals) {
-      controlled.set(literal.start, literal);
+      for (const literal of literals) {
+        controlled.set(literal.start, literal);
+      }
+    }
+  }
+}
+
+function collectAssignmentControlledLiterals(
+  content: string,
+  rule: Extract<ScriptRule, { type: "assignment" }>,
+  controlled: Map<number, ControlledScriptLiteral>
+): void {
+  const assignmentPattern = buildAssignmentPattern(rule.target);
+
+  for (const match of content.matchAll(assignmentPattern)) {
+    const body = match[1] ?? "";
+    const bodyOffset = (match.index ?? 0) + match[0].indexOf(body);
+    for (const pattern of rule.valuePatterns) {
+      const literals = collectPatternLiterals(body, bodyOffset, rule.id, pattern);
+
+      for (const literal of literals) {
+        controlled.set(literal.start, literal);
+      }
     }
   }
 }
@@ -244,7 +266,7 @@ function collectTemplateControlledLiterals(
 function collectPatternLiterals(
   body: string,
   bodyOffset: number,
-  matchedRule: ScriptTemplate["id"],
+  matchedRule: ScriptRule["id"],
   pattern: ScriptPatternType
 ): ControlledScriptLiteral[] {
   if (pattern === "string_literal") {
@@ -583,6 +605,15 @@ function buildCallPattern(callee: string): RegExp {
     .join("\\s*\\.\\s*");
 
   return new RegExp(`${escaped}\\(\\s*([^)]*?)\\s*\\)`, "g");
+}
+
+function buildAssignmentPattern(target: string): RegExp {
+  const escaped = target
+    .split(".")
+    .map((segment) => escapeRegex(segment))
+    .join("\\s*\\.\\s*");
+
+  return new RegExp(`${escaped}\\s*=\\s*([^;\\n]+)`, "g");
 }
 
 function escapeRegex(input: string): string {

@@ -5,6 +5,7 @@ import type { CommandOptions } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
 import { extractEntries, toResourceMap } from "../extractor/extract.js";
 import { scanProject } from "../scanner/scan.js";
+import { resolveScriptRules } from "./script-rules.js";
 import {
   buildMatchedRuleDistribution,
   buildScanDetails,
@@ -16,7 +17,7 @@ import {
   createBaseReport,
   writeReport
 } from "./shared.js";
-import { extractModulePrefix, parseAutoKey } from "../core/keygen.js";
+import { extractModulePrefix, parseModuleScopedKey } from "../core/keygen.js";
 import { loadResourceMap, writeResourceMap } from "../core/resources.js";
 
 export function runExtractCommand(options: CommandOptions, logger: Logger): number {
@@ -25,7 +26,8 @@ export function runExtractCommand(options: CommandOptions, logger: Logger): numb
     `extract targetDir=${options.targetDir} output=${options.outputFile} mode=${options.extractMode} effectiveMode=${effectiveMode} structure=${options.resourceStructure} writeResources=${String(options.writeResources !== false)}`
   );
 
-  const matches = scanProject(options.targetDir);
+  const scriptRules = resolveScriptRules(options, logger);
+  const matches = scanProject(options.targetDir, scriptRules);
   const scannedFiles = collectSourceFiles(options.targetDir);
   const touchedModulePrefixes = collectTouchedModulePrefixes(scannedFiles, options.targetDir);
   const previousResources = loadResourceMap(options.outputFile, options.resourceStructure);
@@ -107,7 +109,7 @@ function buildNextResourceMap(
     const nextResources = new Map<string, string>();
 
     for (const [key, text] of previousResources) {
-      const parsed = parseAutoKey(key);
+      const parsed = parseModuleScopedKey(key);
       if (!parsed || !touchedModules.has(parsed.modulePrefix)) {
         nextResources.set(key, text);
       }

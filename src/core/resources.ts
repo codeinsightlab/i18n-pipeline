@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureParentDir } from "./files.js";
-import { parseAutoKey } from "./keygen.js";
+import { parseModuleScopedKey } from "./keygen.js";
 import type { CommandOptions } from "./types.js";
 
 const RESOURCE_FILE_NAME = "zh.json";
@@ -19,7 +19,8 @@ export function loadResourceMap(
   const resources = new Map<string, string>();
 
   for (const filePath of resourceFiles) {
-    for (const [key, text] of loadSingleResourceFile(filePath)) {
+    const modulePrefix = resourceFileToModulePrefix(filePath, outputFile);
+    for (const [key, text] of loadModuleResourceFile(filePath, modulePrefix)) {
       resources.set(key, text);
     }
   }
@@ -55,7 +56,7 @@ export function writeResourceMap(
   const changedFiles = new Set<string>();
 
   for (const [filePath, fileResources] of groupedCurrent) {
-    const content = `${JSON.stringify(toSortedRecord(fileResources), null, 2)}\n`;
+    const content = `${JSON.stringify(toModuleNestedRecord(fileResources, filePath, outputFile), null, 2)}\n`;
     if (fs.existsSync(filePath) && fs.readFileSync(filePath, "utf8") === content) {
       continue;
     }
@@ -95,7 +96,7 @@ export function keyToResourceFile(
     return outputFile;
   }
 
-  const parsed = parseAutoKey(key);
+  const parsed = parseModuleScopedKey(key);
   return parsed ? modulePrefixToResourceFile(parsed.modulePrefix, outputFile) : outputFile;
 }
 
@@ -107,6 +108,20 @@ function loadSingleResourceFile(filePath: string): Map<string, string> {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, string>;
     return new Map(Object.entries(parsed));
+  } catch {
+    return new Map();
+  }
+}
+
+function loadModuleResourceFile(filePath: string, modulePrefix: string | null): Map<string, string> {
+  if (!fs.existsSync(filePath)) {
+    return new Map();
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
+    const flattened = flattenModuleValue(parsed, modulePrefix ?? "", [], filePath);
+    return new Map(flattened);
   } catch {
     return new Map();
   }
@@ -154,4 +169,121 @@ function toSortedRecord(resources: Map<string, string>): Record<string, string> 
   return Object.fromEntries(
     [...resources.entries()].sort(([left], [right]) => left.localeCompare(right))
   );
+}
+
+function toModuleNestedRecord(
+  resources: Map<string, string>,
+  filePath: string,
+  outputFile: string
+): Record<string, unknown> {
+  const modulePrefix = resourceFileToModulePrefix(filePath, outputFile);
+  const root: Record<string, unknown> = {};
+  const sortedEntries = [...resources.entries()].sort(([left], [right]) => left.localeCompare(right));
+
+  for (const [fullKey, value] of sortedEntries) {
+    const relativeKey = modulePrefix && fullKey.startsWith(`${modulePrefix}.`)
+      ? fullKey.slice(modulePrefix.length + 1)
+      : fullKey;
+    const segments = relativeKey.split(".").filter(Boolean);
+
+    if (segments.length === 0) {
+      throw new Error(`Invalid module key "${fullKey}" for ${filePath}`);
+    }
+
+    setNestedValue(root, segments, value, filePath, fullKey);
+  }
+
+  return sortNestedObject(root) as Record<string, unknown>;
+}
+
+function setNestedValue(
+  root: Record<string, unknown>,
+  segments: string[],
+  value: string,
+  filePath: string,
+  fullKey: string
+): void {
+  let cursor: Record<string, unknown> = root;
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const isLeaf = index === segments.length - 1;
+    const current = cursor[segment];
+
+    if (isLeaf) {
+      if (current !== undefined && typeof current === "object" && current !== null) {
+        throw new Error(`Resource path conflict at ${filePath}: "${fullKey}" collides with existing object node`);
+      }
+      cursor[segment] = value;
+      return;
+    }
+
+    if (current === undefined) {
+      const next: Record<string, unknown> = {};
+      cursor[segment] = next;
+      cursor = next;
+      continue;
+    }
+
+    if (typeof current !== "object" || current === null || Array.isArray(current)) {
+      throw new Error(`Resource path conflict at ${filePath}: "${fullKey}" collides with existing leaf node`);
+    }
+
+    cursor = current as Record<string, unknown>;
+  }
+}
+
+function sortNestedObject(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, child]) => [key, sortNestedObject(child)] as const);
+
+  return Object.fromEntries(entries);
+}
+
+function flattenModuleValue(
+  value: unknown,
+  modulePrefix: string,
+  segments: string[],
+  filePath: string
+): Array<[string, string]> {
+  if (typeof value === "string") {
+    const relative = segments.join(".");
+    if (!relative) {
+      throw new Error(`Invalid module resource shape in ${filePath}: root cannot be string`);
+    }
+    return [[joinModuleAndRelative(modulePrefix, relative), value]];
+  }
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`Invalid module resource shape in ${filePath}: expected object tree`);
+  }
+
+  const entries: Array<[string, string]> = [];
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const nextSegments = [...segments, key];
+    entries.push(...flattenModuleValue(child, modulePrefix, nextSegments, filePath));
+  }
+  return entries;
+}
+
+function joinModuleAndRelative(modulePrefix: string, relativeKey: string): string {
+  return modulePrefix ? `${modulePrefix}.${relativeKey}` : relativeKey;
+}
+
+function resourceFileToModulePrefix(filePath: string, outputFile: string): string | null {
+  const rootDir = path.dirname(outputFile);
+  const relativePath = path.relative(rootDir, filePath);
+  const normalized = relativePath.split(path.sep).filter(Boolean);
+
+  if (normalized.length <= 1) {
+    return null;
+  }
+
+  const segments = normalized.slice(0, -1);
+  return segments.join(".");
 }

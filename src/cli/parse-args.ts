@@ -1,11 +1,12 @@
 import path from "node:path";
 import type { CommandOptions } from "../core/types.js";
 
-export type CommandName = "scan" | "extract" | "replace" | "run" | "apply";
+export type CommandName = "scan" | "extract" | "replace" | "run" | "apply" | "init-script-rules" | "init";
 
 export interface ParsedCliArgs {
   command?: CommandName;
   options: CommandOptions;
+  initOutFile?: string;
   showHelp: boolean;
   showVersion: boolean;
   missingCommand: boolean;
@@ -45,13 +46,24 @@ function buildParsedArgs(
   showVersion: boolean
 ): ParsedCliArgs {
   validateArgs(args);
+  const positionalArgs = collectPositionalArgs(args);
 
   const targetDir = readFlagValue(args, "--dir") ?? process.cwd();
   const outputFile = readFlagValue(args, "--output") ?? path.resolve(process.cwd(), "i18n/zh.json");
   const reportFile = readFlagValue(args, "--report");
+  const scriptRulesFile = readFlagValue(args, "--script-rules");
+  const initOutFile = readFlagValue(args, "--out") ?? (isInitCommand(command) ? positionalArgs[0] : undefined);
   const resourceStructure = readFlagValue(args, "--structure") ?? "single";
   const extractMode = readFlagValue(args, "--mode") ?? "merge";
   const gitCheck = readFlagValue(args, "--git-check") ?? "warn";
+
+  if (isInitCommand(command) && positionalArgs.length > 1) {
+    throw new CliUsageError("init accepts at most one positional path.");
+  }
+
+  if (!isInitCommand(command) && positionalArgs.length > 0) {
+    throw new CliUsageError(`Unexpected positional argument: ${positionalArgs[0]}.`);
+  }
 
   if (!isResourceStructure(resourceStructure)) {
     throw new CliUsageError(`Invalid --structure value: ${resourceStructure}. Use single or module-dir.`);
@@ -69,6 +81,7 @@ function buildParsedArgs(
 
   return {
     command,
+    initOutFile: initOutFile ? path.resolve(initOutFile) : undefined,
     showHelp,
     showVersion,
     missingCommand: !command && !showHelp && !showVersion,
@@ -86,13 +99,14 @@ function buildParsedArgs(
         extractMode: args.includes("--mode"),
         gitCheck: args.includes("--git-check")
       },
+      scriptRulesFile: scriptRulesFile ? path.resolve(scriptRulesFile) : undefined,
       reportFile: reportFile ? path.resolve(reportFile) : undefined
     }
   };
 }
 
 function validateArgs(args: string[]): void {
-  const valuedFlags = ["--dir", "--output", "--report", "--structure", "--mode", "--git-check"];
+  const valuedFlags = ["--dir", "--output", "--report", "--structure", "--mode", "--git-check", "--script-rules", "--out"];
   const allowedFlags = new Set([
     "--dir",
     "--output",
@@ -100,6 +114,8 @@ function validateArgs(args: string[]): void {
     "--structure",
     "--mode",
     "--git-check",
+    "--script-rules",
+    "--out",
     "--dry-run",
     "--debug",
     "--help",
@@ -134,7 +150,7 @@ function readFlagValue(args: string[], flag: string): string | undefined {
 }
 
 function isCommandName(value: string): value is CommandName {
-  return value === "scan" || value === "extract" || value === "replace" || value === "run" || value === "apply";
+  return value === "scan" || value === "extract" || value === "replace" || value === "run" || value === "apply" || value === "init-script-rules" || value === "init";
 }
 
 function isExtractMode(value: string): value is CommandOptions["extractMode"] {
@@ -164,6 +180,10 @@ export function ensureDirProvided(argv: string[]): void {
     return;
   }
 
+  if (maybeCommand === "init-script-rules" || maybeCommand === "init") {
+    return;
+  }
+
   if (restArgs.includes("--help") || restArgs.includes("-h") || restArgs.includes("--version") || restArgs.includes("-v")) {
     return;
   }
@@ -171,4 +191,28 @@ export function ensureDirProvided(argv: string[]): void {
   if (!restArgs.includes("--dir")) {
     throw new CliUsageError("Missing required --dir <path>.");
   }
+}
+
+function isInitCommand(command: CommandName | undefined): boolean {
+  return command === "init-script-rules" || command === "init";
+}
+
+function collectPositionalArgs(args: string[]): string[] {
+  const valuedFlags = new Set(["--dir", "--output", "--report", "--structure", "--mode", "--git-check", "--script-rules", "--out"]);
+  const positional: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+
+    if (valuedFlags.has(token)) {
+      index += 1;
+      continue;
+    }
+
+    if (!token.startsWith("-")) {
+      positional.push(token);
+    }
+  }
+
+  return positional;
 }

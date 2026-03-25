@@ -17,16 +17,18 @@ import {
 } from "./shared.js";
 import { collectSourceFiles } from "../core/files.js";
 import { loadResourceMap } from "../core/resources.js";
+import { resolveScriptRules } from "./script-rules.js";
 
 export function runReplaceCommand(options: CommandOptions, logger: Logger): number {
   logger.debug(
     `replace targetDir=${options.targetDir} output=${options.outputFile} dryRun=${String(options.dryRun)} structure=${options.resourceStructure}`
   );
 
-  const matches = scanProject(options.targetDir);
+  const scriptRules = resolveScriptRules(options, logger);
+  const matches = scanProject(options.targetDir, scriptRules);
   const existingResources = loadResourceMap(options.outputFile, options.resourceStructure);
   const entries = extractEntries(matches, existingResources, options.targetDir, options.resourceStructure);
-  const report = replaceProject(options.targetDir, entries, options.dryRun);
+  const report = replaceProject(options.targetDir, entries, options.dryRun, scriptRules);
   const reusedCount = entries.filter((entry) => entry.reused).length;
   const createdCount = entries.length - reusedCount;
   const changedFiles = uniqueStrings(report.changes.map((item) => item.filePath));

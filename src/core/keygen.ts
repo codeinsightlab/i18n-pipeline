@@ -3,6 +3,7 @@ import path from "node:path";
 const DEFAULT_MODULE_PREFIX = "module";
 const FILTERED_SEGMENTS = new Set(["views", "components", "common", "layout", "index"]);
 const ANCHOR_SEGMENTS = [["src", "views"]];
+const MAX_MODULE_PATH_SEGMENTS = 3;
 
 export function generateAutoKey(modulePrefix: string, index: number): string {
   return `${sanitizeDottedModulePrefix(modulePrefix)}.auto_${String(index).padStart(3, "0")}`;
@@ -24,7 +25,7 @@ export function extractModulePrefix(filePath: string, targetDir: string): string
   const filtered = directorySegments.filter((segment) => !FILTERED_SEGMENTS.has(segment.toLowerCase()));
 
   if (filtered.length > 0) {
-    return filtered.slice(0, 2).map(sanitizeModulePrefix).join(".");
+    return filtered.slice(0, MAX_MODULE_PATH_SEGMENTS).map(sanitizeModulePrefix).join(".");
   }
 
   if (directorySegments.length > 0) {
@@ -49,7 +50,7 @@ function extractAnchoredModulePrefix(filePath: string): string | null {
     const filtered = directorySegments.filter((segment) => !FILTERED_SEGMENTS.has(segment.toLowerCase()));
 
     if (filtered.length > 0) {
-      return filtered.slice(0, 2).map(sanitizeModulePrefix).join(".");
+      return filtered.slice(0, MAX_MODULE_PATH_SEGMENTS).map(sanitizeModulePrefix).join(".");
     }
 
     if (directorySegments.length > 0) {
@@ -84,6 +85,29 @@ export function parseAutoKey(key: string): { modulePrefix: string; index: number
     modulePrefix: match[1],
     index: Number(match[2])
   };
+}
+
+export function parseModuleScopedKey(key: string): { modulePrefix: string } | null {
+  const parsedAuto = parseAutoKey(key);
+  if (parsedAuto) {
+    return { modulePrefix: parsedAuto.modulePrefix };
+  }
+
+  const structured = key.match(/^([a-z0-9_.]+)\.(query|table|form|rules)\.[A-Za-z_$][\w$]*(?:\.(label|placeholder))?$/);
+  if (!structured) {
+    const generic = key.match(/^([a-z0-9_.]+)\.([A-Za-z_$][\w$]*)$/);
+    if (!generic) {
+      return null;
+    }
+
+    if (!generic[1].includes(".")) {
+      return null;
+    }
+
+    return { modulePrefix: generic[1] };
+  }
+
+  return { modulePrefix: structured[1] };
 }
 
 function sanitizeModulePrefix(input: string): string {

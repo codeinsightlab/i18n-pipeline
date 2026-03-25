@@ -44,6 +44,30 @@
 - 当没有现成 key 时，新文本按稳定排序分配新 key，避免文件顺序变化导致 key 漂移
 - `replace` 第二次执行时应保持幂等，不应产生新的代码修改
 
+## Script Rules (Explicit)
+
+Phase 1 现在将业务 script 规则收敛为“外部显式传入”：
+
+- `assignment/call` 业务规则默认不启用
+- 只有传入 `--script-rules <json>` 才会启用对应匹配与替换
+- 工具内核只支持固定 pattern：
+  - `string_literal`
+  - `ternary_string`
+  - `concat_string_var_string`
+
+不传 `--script-rules` 时：
+
+- `this.title = "中文"`、`this.$modal.msgSuccess(...)`、`this.$modal.confirm(...)` 不会替换
+- 这些字符串会继续进入 report，并以 `script_unsupported` 体现
+- `rules.message` 仍保留为内置结构能力（用于最小稳定覆盖）
+
+可用命令：
+
+```bash
+i18n init-script-rules --out ./i18n/script-rules.json
+i18n apply --dir ./src/views/system/user --script-rules ./i18n/script-rules.json
+```
+
 ## Context Classification
 
 当前版本在扫描后会先给中文候选打上下文分类，再决定是否可提取、是否可替换。
@@ -138,7 +162,9 @@ npm run build
 node dist/cli/index.js scan --dir ./fixtures/realish --report ./output/scan-report.json
 node dist/cli/index.js extract --dir ./fixtures/realish --output ./i18n/zh.json --report ./output/extract-report.json
 node dist/cli/index.js extract --dir ./fixtures/realish --output ./i18n/zh.json --structure module-dir
+node dist/cli/index.js init-script-rules --out ./i18n/script-rules.json
 node dist/cli/index.js replace --dir ./fixtures/realish --output ./output/realish.zh.json --report ./output/replace-report.json --dry-run
+node dist/cli/index.js replace --dir ./fixtures/realish --output ./output/realish.zh.json --script-rules ./i18n/script-rules.json --dry-run
 ```
 
 `run` 和 `apply` 在传入 `--report` 时，会额外生成一份聚合总报告；控制台仍然保留摘要输出。

@@ -162,6 +162,7 @@ function printConfigSummary(command: "run" | "apply", options: CommandOptions, l
   logger.info(`structure: ${options.resourceStructure}${formatDefaultLabel(options.explicitConfig?.resourceStructure)}`);
   logger.info(`mode: ${options.extractMode}${formatDefaultLabel(options.explicitConfig?.extractMode)}`);
   logger.info(`git-check: ${options.gitCheck}${formatDefaultLabel(options.explicitConfig?.gitCheck)}`);
+  logger.info(`script-rules: ${options.scriptRulesFile ? path.relative(process.cwd(), options.scriptRulesFile) : "disabled"}`);
 
   const missingDefaults: string[] = [];
 
@@ -221,7 +222,8 @@ function writeCompositeReport(
       structure: options.resourceStructure,
       mode: options.extractMode,
       "git-check": options.gitCheck,
-      report: options.reportFile
+      report: options.reportFile,
+      "script-rules": options.scriptRulesFile
     },
     summary: {
       scan: scanReport ? {

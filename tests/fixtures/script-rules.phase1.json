@@ -1,0 +1,34 @@
+{
+  "scriptRules": [
+    {
+      "id": "script_this_title",
+      "type": "assignment",
+      "target": "this.title",
+      "valuePatterns": ["string_literal"]
+    },
+    {
+      "id": "modal_msg_success",
+      "type": "call",
+      "callee": "this.$modal.msgSuccess",
+      "args": [
+        { "index": 0, "patterns": ["string_literal"] }
+      ]
+    },
+    {
+      "id": "modal_msg_success_ternary",
+      "type": "call",
+      "callee": "this.$modal.msgSuccess",
+      "args": [
+        { "index": 0, "patterns": ["ternary_string"] }
+      ]
+    },
+    {
+      "id": "modal_confirm_concat",
+      "type": "call",
+      "callee": "this.$modal.confirm",
+      "args": [
+        { "index": 0, "patterns": ["concat_string_var_string"] }
+      ]
+    }
+  ]
+}

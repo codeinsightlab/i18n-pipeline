@@ -64,6 +64,8 @@ export function createBaseReport(
       policy_skipped_count: summary.policySkippedCount,
       // script_unsupported_count: script 侧因白名单外被跳过的数量。
       script_unsupported_count: summary.scriptUnsupportedCount,
+      // script_rules_enabled: 当前命令是否显式启用了外部 script 业务规则。
+      script_rules_enabled: Boolean(options.scriptRulesFile),
       matched_rule_distribution: summary.matchedRuleDistribution,
       changed_files: summary.changedFiles.map((item) => path.relative(process.cwd(), item)),
       unchanged_files: summary.unchangedFiles.map((item) => path.relative(process.cwd(), item)),

@@ -17,9 +17,9 @@ import {
   collectControlledScriptLiterals,
   resolveTemplateTextTagName
 } from "../core/rules.js";
-import type { ScanMatch } from "../core/types.js";
+import type { ScanMatch, ScriptRule } from "../core/types.js";
 
-export function scanProject(targetDir: string): ScanMatch[] {
+export function scanProject(targetDir: string, scriptRules: ScriptRule[] = []): ScanMatch[] {
   const files = collectSourceFiles(targetDir);
   const matches: ScanMatch[] = [];
 
@@ -37,24 +37,24 @@ export function scanProject(targetDir: string): ScanMatch[] {
 
       const scripts = extractAllVueBlocks(content, "script");
       for (const scriptBlock of scripts) {
-        matches.push(...scanContentForLiterals(filePath, scriptBlock.content, scriptBlock.startLine));
+        matches.push(...scanContentForLiterals(filePath, scriptBlock.content, scriptBlock.startLine, scriptRules));
       }
 
       continue;
     }
 
-    matches.push(...scanContentForLiterals(filePath, content, 0));
+    matches.push(...scanContentForLiterals(filePath, content, 0, scriptRules));
   }
 
   return matches;
 }
 
-export function scanContentForLiterals(filePath: string, content: string, lineOffset: number): ScanMatch[] {
+export function scanContentForLiterals(filePath: string, content: string, lineOffset: number, scriptRules: ScriptRule[] = []): ScanMatch[] {
   const matches: ScanMatch[] = [];
   const commentRanges = collectCommentRanges(content, false);
   // 受控表达式（msgSuccess 三元 / confirm 拼接）先做“模板级定位”，
   // 后续按字符串起始偏移直接命中，避免在 classify 阶段重复解析整段表达式。
-  const controlledLiterals = collectControlledScriptLiterals(content);
+  const controlledLiterals = collectControlledScriptLiterals(content, scriptRules);
 
   for (const match of content.matchAll(/`(?:\\.|[^`])*?[\u4e00-\u9fff]+(?:\\.|[^`])*?`/g)) {
     const raw = match[0];

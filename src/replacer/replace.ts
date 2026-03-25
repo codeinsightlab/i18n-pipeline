@@ -18,9 +18,9 @@ import {
   collectControlledScriptLiterals,
   resolveTemplateTextTagName
 } from "../core/rules.js";
-import type { ExtractItem, ReplaceChange, ReplaceReport, ReplaceSkip, SkipReason } from "../core/types.js";
+import type { ExtractItem, ReplaceChange, ReplaceReport, ReplaceSkip, ScriptRule, SkipReason } from "../core/types.js";
 
-export function replaceProject(targetDir: string, entries: ExtractItem[], dryRun: boolean): ReplaceReport {
+export function replaceProject(targetDir: string, entries: ExtractItem[], dryRun: boolean, scriptRules: ScriptRule[] = []): ReplaceReport {
   const files = collectSourceFiles(targetDir);
   const textToKey = new Map(entries.map((entry) => [entry.text, entry.key]));
   const moduleTextToKey = new Map<string, Map<string, string>>();
@@ -40,8 +40,8 @@ export function replaceProject(targetDir: string, entries: ExtractItem[], dryRun
     const source = fs.readFileSync(filePath, "utf8");
     const modulePrefix = extractModulePrefix(filePath, targetDir);
     const result = path.extname(filePath) === ".vue"
-      ? replaceVueFile(filePath, source, modulePrefix, textToKey, moduleTextToKey, changes, skipped)
-      : replaceJsLikeFile(filePath, source, modulePrefix, textToKey, moduleTextToKey, changes, skipped);
+      ? replaceVueFile(filePath, source, modulePrefix, textToKey, moduleTextToKey, changes, skipped, scriptRules)
+      : replaceJsLikeFile(filePath, source, modulePrefix, textToKey, moduleTextToKey, changes, skipped, scriptRules);
 
     if (!dryRun && result.changed) {
       fs.writeFileSync(filePath, result.content, "utf8");
@@ -68,6 +68,7 @@ function replaceJsLikeFile(
   moduleTextToKey: Map<string, Map<string, string>>,
   changes: ReplaceChange[],
   skipped: ReplaceSkip[],
+  scriptRules: ScriptRule[],
   locationContent: string = content,
   locationOffset = 0
 ): { content: string; changed: boolean } {
@@ -75,7 +76,7 @@ function replaceJsLikeFile(
   let cursor = 0;
   let nextContent = "";
   const commentRanges = collectCommentRanges(content, false);
-  const controlledLiterals = collectControlledScriptLiterals(content);
+  const controlledLiterals = collectControlledScriptLiterals(content, scriptRules);
 
   for (const match of content.matchAll(/`(?:\\.|[^`])*?[\u4e00-\u9fff]+(?:\\.|[^`])*?`/g)) {
     const start = match.index ?? 0;
@@ -169,7 +170,8 @@ function replaceVueFile(
   textToKey: Map<string, string>,
   moduleTextToKey: Map<string, Map<string, string>>,
   changes: ReplaceChange[],
-  skipped: ReplaceSkip[]
+  skipped: ReplaceSkip[],
+  scriptRules: ScriptRule[]
 ): { content: string; changed: boolean } {
   let changed = false;
   const segmentUpdates: Array<{ start: number; end: number; next: string }> = [];
@@ -208,6 +210,7 @@ function replaceVueFile(
       moduleTextToKey,
       changes,
       skipped,
+      scriptRules,
       content,
       scriptBlock.contentStart
     );
@@ -277,7 +280,8 @@ function replaceVueTemplateBlock(
       return raw;
     }
 
-    const key = resolveKey(text.trim(), modulePrefix, textToKey, moduleTextToKey);
+    // 与 scan/extract 保持同一文本口径：这里不做 trim，避免尾空格文案查不到 key。
+    const key = resolveKey(text, modulePrefix, textToKey, moduleTextToKey);
 
     if (!key) {
       return raw;
@@ -333,7 +337,8 @@ function replaceVueTemplateBlock(
         return raw;
       }
 
-      const key = resolveKey(text.trim(), modulePrefix, textToKey, moduleTextToKey);
+      // 与 scan/extract 保持同一文本口径：这里不做 trim，避免尾空格属性值漏替换。
+      const key = resolveKey(text, modulePrefix, textToKey, moduleTextToKey);
 
       if (!key) {
         return raw;

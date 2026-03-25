@@ -31,43 +31,35 @@ export type SkipReason =
   | "template_string"
   | "template_unsupported";
 
-export type MatchedRule =
-  | "already_i18n"
-  | "console_call"
-  | "modal_confirm_concat"
-  | "modal_msg_success"
-  | "modal_msg_success_ternary"
-  | "object_key"
-  | "template_string"
-  | "template_interpolation"
-  | "template_label_attr"
-  | "template_placeholder_attr"
-  | "template_el_table_column_label"
-  | "template_el_button_text"
-  | "template_unsupported_attr_alt"
-  | "template_unsupported_attr_other"
-  | "template_unsupported_attr_title"
-  | "template_unsupported_text"
-  | "script_rules_message"
-  | "script_this_title"
-  | "script_unsupported_confirm_concat"
-  | "script_unsupported_generic";
+export type MatchedRule = string;
 
 export type ScriptPatternType =
   | "string_literal"
   | "ternary_string"
   | "concat_string_var_string";
 
-export interface ScriptTemplateArg {
+export type ScriptRuleType = "assignment" | "call";
+
+export interface ScriptRuleArg {
   index: number;
-  pattern: ScriptPatternType;
+  patterns: ScriptPatternType[];
 }
 
-export interface ScriptTemplate {
-  id: "modal_msg_success" | "modal_msg_success_ternary" | "modal_confirm_concat";
-  callee: string;
-  args: [ScriptTemplateArg];
+export interface ScriptAssignmentRule {
+  id: string;
+  type: "assignment";
+  target: string;
+  valuePatterns: ScriptPatternType[];
 }
+
+export interface ScriptCallRule {
+  id: string;
+  type: "call";
+  callee: string;
+  args: ScriptRuleArg[];
+}
+
+export type ScriptRule = ScriptAssignmentRule | ScriptCallRule;
 
 export interface ExtractItem {
   key: string;
@@ -120,6 +112,7 @@ export interface CommandOptions {
     extractMode: boolean;
     gitCheck: boolean;
   };
+  scriptRulesFile?: string;
   reportFile?: string;
 }
 
@@ -143,6 +136,7 @@ export interface ReportSummary {
   replaceable_count: number;
   policy_skipped_count: number;
   script_unsupported_count: number;
+  script_rules_enabled: boolean;
   matched_rule_distribution: Partial<Record<MatchedRule, number>>;
   changed_files: string[];
   unchanged_files: string[];

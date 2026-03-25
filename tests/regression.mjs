@@ -6,18 +6,29 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 const workspace = process.cwd();
 const cliPath = path.join(workspace, "dist/cli/index.js");
+const defaultScriptRulesFile = path.join(workspace, "tests/fixtures/script-rules.phase1.json");
 
 await runBuild();
+await testScriptRulesTemplateAndLoader();
 await testModulePrefixResolver();
 testKeyStability();
 testExtractModes();
 testModuleDirExtractModes();
 testModuleDirCrossModuleReuseBoundary();
 testModuleDirTouchedModulesOnly();
+testModuleDirNestedOutputAndDeepMerge();
+testModuleDirPathConflictIsExplainable();
 await testNonAutoKeysDoNotAffectModuleCounter();
 testModuleDirReplace();
 testLeafTargetDirUsesAnchoredModulePrefix();
+testStructuredAnchorKeyPriority();
+testFormLabelPlaceholderComboUsesFlatSuffix();
+testModuleDirGroupFirstNoCrossGroupReuse();
+testModuleDirRulesMessageAnchors();
+testModuleDirRulesMessageFallback();
+testModuleDirRulesMessagePreferAnchorOverAutoReuse();
 testTemplateWhitelistSupport();
+testTemplateTrailingSpaceReplacement();
 testScriptWhitelistSupport();
 testVueSfcWhitelistMainline();
 testControlledExpressionBoundaries();
@@ -29,9 +40,24 @@ testCommentRangesFiltered();
 testRiskyReport();
 testStructuredReports();
 testReportExplainability();
+testScriptRulesAreExplicit();
+testScriptRulesFileValidation();
+testInitScriptRulesCommand();
 testUsageExitCode();
 
 console.log("Regression checks passed.");
+
+async function testScriptRulesTemplateAndLoader() {
+  const { SCRIPT_RULES_TEMPLATE } = await import("../dist/core/script-templates.js");
+  const { validateScriptRulesDocument } = await import("../dist/core/script-rules.js");
+
+  assert.equal(Array.isArray(SCRIPT_RULES_TEMPLATE.scriptRules), true);
+  assert.equal(SCRIPT_RULES_TEMPLATE.scriptRules.some((rule) => rule.type === "assignment"), true);
+  assert.equal(SCRIPT_RULES_TEMPLATE.scriptRules.some((rule) => rule.type === "call"), true);
+
+  const validated = validateScriptRulesDocument(JSON.parse(fs.readFileSync(defaultScriptRulesFile, "utf8")), defaultScriptRulesFile);
+  assert.equal(validated.scriptRules.length >= 3, true);
+}
 
 function runBuild() {
   execFileSync("npm", ["run", "build"], {
@@ -151,14 +177,14 @@ function testModuleDirExtractModes() {
   fs.writeFileSync(path.join(targetDir, "src/plugins/download/index.ts"), 'this.$modal.msgSuccess("下载中心");\n', "utf8");
 
   writeJson(path.join(tempDir, "i18n/system/user/zh.json"), {
-    "system.user.auto_005": "用户管理",
-    "system.user.auto_010": "旧文案"
+    auto_005: "用户管理",
+    auto_010: "旧文案"
   });
   writeJson(path.join(tempDir, "i18n/plugins/download/zh.json"), {
-    "plugins.download.auto_002": "下载中心"
+    auto_002: "下载中心"
   });
   writeJson(path.join(tempDir, "i18n/router/zh.json"), {
-    "router.auto_003": "路由旧文案"
+    auto_003: "路由旧文案"
   });
 
   runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
@@ -167,21 +193,21 @@ function testModuleDirExtractModes() {
   const overwritePlugin = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/plugins/download/zh.json"), "utf8"));
   const untouchedRouter = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/router/zh.json"), "utf8"));
 
-  assert.equal(overwriteSystem["system.user.auto_005"], "用户管理");
-  assert.equal(overwriteSystem["system.user.auto_011"], "保存");
-  assert.equal(overwriteSystem["system.user.auto_010"], "旧文案");
-  assert.equal(overwritePlugin["plugins.download.auto_002"], "下载中心");
-  assert.equal(untouchedRouter["router.auto_003"], "路由旧文案");
+  assert.equal(overwriteSystem.auto_005, "用户管理");
+  assert.equal(overwriteSystem.auto_011, "保存");
+  assert.equal(overwriteSystem.auto_010, "旧文案");
+  assert.equal(overwritePlugin.auto_002, "下载中心");
+  assert.equal(untouchedRouter.auto_003, "路由旧文案");
 
   writeJson(path.join(tempDir, "i18n/system/user/zh.json"), {
-    "system.user.auto_005": "用户管理",
-    "system.user.auto_010": "旧文案"
+    auto_005: "用户管理",
+    auto_010: "旧文案"
   });
   runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir", "--mode", "merge"]);
   const mergeSystem = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/system/user/zh.json"), "utf8"));
-  assert.equal(mergeSystem["system.user.auto_005"], "用户管理");
-  assert.equal(mergeSystem["system.user.auto_010"], "旧文案");
-  assert.equal(mergeSystem["system.user.auto_011"], "保存");
+  assert.equal(mergeSystem.auto_005, "用户管理");
+  assert.equal(mergeSystem.auto_010, "旧文案");
+  assert.equal(mergeSystem.auto_011, "保存");
 }
 
 function testModuleDirCrossModuleReuseBoundary() {
@@ -195,10 +221,10 @@ function testModuleDirCrossModuleReuseBoundary() {
   fs.writeFileSync(path.join(targetDir, "src/plugins/download/index.ts"), 'this.$modal.msgSuccess("保存");\n', "utf8");
 
   writeJson(path.join(tempDir, "i18n/system/user/zh.json"), {
-    "system.user.auto_005": "保存"
+    auto_005: "保存"
   });
   writeJson(path.join(tempDir, "i18n/plugins/download/zh.json"), {
-    "plugins.download.auto_002": "旧下载文案"
+    auto_002: "旧下载文案"
   });
 
   runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
@@ -206,9 +232,9 @@ function testModuleDirCrossModuleReuseBoundary() {
   const systemZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/system/user/zh.json"), "utf8"));
   const pluginZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/plugins/download/zh.json"), "utf8"));
 
-  assert.equal(systemZh["system.user.auto_005"], "保存");
-  assert.equal(pluginZh["plugins.download.auto_003"], "保存");
-  assert.equal("system.user.auto_005" in pluginZh, false);
+  assert.equal(systemZh.auto_005, "保存");
+  assert.equal(pluginZh.auto_003, "保存");
+  assert.equal("auto_005" in pluginZh, false);
 }
 
 function testModuleDirTouchedModulesOnly() {
@@ -220,25 +246,25 @@ function testModuleDirTouchedModulesOnly() {
   fs.writeFileSync(path.join(targetDir, "src/views/system/user/index.ts"), 'this.title = "用户管理";\n', "utf8");
 
   writeJson(path.join(tempDir, "i18n/system/user/zh.json"), {
-    "system.user.auto_001": "旧用户"
+    auto_001: "旧用户"
   });
   writeJson(path.join(tempDir, "i18n/plugins/download/zh.json"), {
-    "plugins.download.auto_001": "下载中心"
+    auto_001: "下载中心"
   });
 
   runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
   const pluginZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/plugins/download/zh.json"), "utf8"));
   assert.deepEqual(pluginZh, {
-    "plugins.download.auto_001": "下载中心"
+    auto_001: "下载中心"
   });
 
   writeJson(path.join(tempDir, "i18n/system/user/zh.json"), {
-    "system.user.auto_001": "旧用户"
+    auto_001: "旧用户"
   });
   runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir", "--mode", "merge"]);
   const pluginZhAfterMerge = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/plugins/download/zh.json"), "utf8"));
   assert.deepEqual(pluginZhAfterMerge, {
-    "plugins.download.auto_001": "下载中心"
+    auto_001: "下载中心"
   });
 }
 
@@ -274,8 +300,8 @@ function testModuleDirReplace() {
   fs.mkdirSync(path.join(tempDir, "i18n/system/user"), { recursive: true });
   fs.writeFileSync(path.join(targetDir, "src/views/system/user/index.ts"), 'this.title = "用户管理";\nconst rules = [{ required: true, message: "保存", trigger: "blur" }];\n', "utf8");
   writeJson(path.join(tempDir, "i18n/system/user/zh.json"), {
-    "system.user.auto_001": "用户管理",
-    "system.user.auto_002": "保存"
+    auto_001: "用户管理",
+    auto_002: "保存"
   });
 
   const output = runCli(["replace", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
@@ -284,6 +310,65 @@ function testModuleDirReplace() {
   assert.match(output, /Applied 2 replacement\(s\)\./);
   assert.match(source, /t\("system\.user\.auto_001"\)/);
   assert.match(source, /t\("system\.user\.auto_002"\)/);
+}
+
+function testModuleDirNestedOutputAndDeepMerge() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-module-nested-merge-"));
+  const targetDir = path.join(tempDir, "project");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+
+  fs.mkdirSync(path.join(targetDir, "src/views/order/transactions"), { recursive: true });
+  fs.writeFileSync(path.join(targetDir, "src/views/order/transactions/index.vue"), [
+    "<template>",
+    "  <el-form-item>",
+    "    <el-input v-model=\"queryParams.search\" placeholder=\"搜索\" />",
+    "  </el-form-item>",
+    "</template>"
+  ].join("\n"), "utf8");
+
+  writeJson(path.join(tempDir, "i18n/order/transactions/zh.json"), {
+    query: {
+      reset: "重置"
+    }
+  });
+
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
+  const moduleZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/order/transactions/zh.json"), "utf8"));
+
+  assert.equal(moduleZh.query.reset, "重置");
+  assert.equal(moduleZh.query.search, "搜索");
+}
+
+function testModuleDirPathConflictIsExplainable() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-module-conflict-"));
+  const targetDir = path.join(tempDir, "project");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+
+  fs.mkdirSync(path.join(targetDir, "src/views/order/transactions"), { recursive: true });
+  fs.writeFileSync(path.join(targetDir, "src/views/order/transactions/index.vue"), [
+    "<template>",
+    "  <el-form-item>",
+    "    <el-input v-model=\"queryParams.search\" placeholder=\"搜索\" />",
+    "  </el-form-item>",
+    "</template>"
+  ].join("\n"), "utf8");
+
+  writeJson(path.join(tempDir, "i18n/order/transactions/zh.json"), {
+    query: "旧值"
+  });
+
+  const result = runCliRaw([
+    "extract",
+    "--dir",
+    targetDir,
+    "--output",
+    outputFile,
+    "--structure",
+    "module-dir"
+  ], false);
+
+  assert.equal(result.status !== 0, true);
+  assert.match(result.stderr, /Resource path conflict/);
 }
 
 function testLeafTargetDirUsesAnchoredModulePrefix() {
@@ -300,7 +385,185 @@ function testLeafTargetDirUsesAnchoredModulePrefix() {
   const moduleFile = path.join(projectDir, "i18n/system/activitymini/zh.json");
   assert.equal(fs.existsSync(moduleFile), true);
   const zh = JSON.parse(fs.readFileSync(moduleFile, "utf8"));
-  assert.equal(zh["system.activitymini.auto_001"], "添加活动信息");
+  assert.equal(zh.auto_001, "添加活动信息");
+}
+
+function testStructuredAnchorKeyPriority() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-key-priority-module-dir-"));
+  const targetDir = path.join(tempDir, "project");
+  const pageDir = path.join(targetDir, "src/views/mes/pro/schedule");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+
+  fs.mkdirSync(pageDir, { recursive: true });
+  fs.writeFileSync(path.join(pageDir, "index.vue"), [
+    "<template>",
+    "  <el-form-item>",
+    "    <el-input v-model=\"queryParams.filters.workorderName\" placeholder=\"工单名称查询\" />",
+    "  </el-form-item>",
+    "  <el-table-column prop=\"workorderName\" label=\"工单名称列\" />",
+    "  <el-form-item label=\"工单名称\" prop=\"workorderName\">",
+    "    <el-input />",
+    "  </el-form-item>",
+    "  <el-form-item>",
+    "    <el-input v-model=\"formData.user.name\" placeholder=\"用户姓名输入\" />",
+    "  </el-form-item>",
+    "  <el-form-item>",
+    "    <el-input placeholder=\"无锚点占位\" />",
+    "  </el-form-item>",
+    "  <el-button>保存</el-button>",
+    "</template>"
+  ].join("\n"), "utf8");
+
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
+  const moduleFile = path.join(tempDir, "i18n/mes/pro/schedule/zh.json");
+  const resources = JSON.parse(fs.readFileSync(moduleFile, "utf8"));
+  assert.equal(resources.query.workorderName, "工单名称查询");
+  assert.equal(resources.table.workorderName, "工单名称列");
+  assert.equal(resources.form.workorderName, "工单名称");
+  assert.equal(resources.form.name, "用户姓名输入");
+  assert.equal(resources.form.queryParams, undefined);
+  assert.equal(resources.form.formData, undefined);
+  assert.match(resources.auto_001 ?? "", /无锚点占位|保存/);
+  assert.match(resources.auto_002 ?? "", /无锚点占位|保存/);
+  const rootFile = path.join(tempDir, "i18n/zh.json");
+  const rootResources = fs.existsSync(rootFile) ? JSON.parse(fs.readFileSync(rootFile, "utf8")) : {};
+  assert.equal(Object.keys(rootResources).length, 0);
+}
+
+function testFormLabelPlaceholderComboUsesFlatSuffix() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-form-combo-"));
+  const targetDir = path.join(tempDir, "project");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+  const pageDir = path.join(targetDir, "src/views/order/transactions");
+
+  fs.mkdirSync(pageDir, { recursive: true });
+  fs.writeFileSync(path.join(pageDir, "index.vue"), [
+    "<template>",
+    "  <el-form-item label=\"地址标签\" prop=\"addressTag\">",
+    "    <el-input v-model=\"form.addressTag\" placeholder=\"请输入地址标签\" />",
+    "  </el-form-item>",
+    "</template>"
+  ].join("\n"), "utf8");
+
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
+  const moduleZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/order/transactions/zh.json"), "utf8"));
+
+  assert.equal(moduleZh.form.addressTag, "地址标签");
+  assert.equal(moduleZh.form.addressTagPlaceholder, "请输入地址标签");
+  assert.equal(typeof moduleZh.form.addressTag, "string");
+  assert.equal(moduleZh.form.addressTag?.label, undefined);
+}
+
+function testModuleDirGroupFirstNoCrossGroupReuse() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-group-first-"));
+  const targetDir = path.join(tempDir, "project");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+  const pageDir = path.join(targetDir, "src/views/order/addresses");
+
+  fs.mkdirSync(pageDir, { recursive: true });
+  fs.writeFileSync(path.join(pageDir, "index.vue"), [
+    "<template>",
+    "  <el-form-item label=\"用户id\" prop=\"userId\">",
+    "    <el-input v-model=\"form.userId\" placeholder=\"请输入用户id\" />",
+    "  </el-form-item>",
+    "  <el-table-column prop=\"userId\" label=\"用户id\" />",
+    "</template>",
+    "<script>",
+    "const rules = {",
+    "  userId: [",
+    "    { required: true, message: \"用户id\", trigger: \"blur\" }",
+    "  ]",
+    "};",
+    "</script>"
+  ].join("\n"), "utf8");
+
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
+  const moduleZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/order/addresses/zh.json"), "utf8"));
+
+  assert.equal(moduleZh.form.userId, "用户id");
+  assert.equal(moduleZh.form.userIdPlaceholder, "请输入用户id");
+  assert.equal(moduleZh.table.userId, "用户id");
+  assert.equal(moduleZh.rules.userId, "用户id");
+}
+
+function testModuleDirRulesMessageAnchors() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-rules-anchor-"));
+  const targetDir = path.join(tempDir, "project");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+  const pageDir = path.join(targetDir, "src/views/order/transactions");
+
+  fs.mkdirSync(pageDir, { recursive: true });
+  fs.writeFileSync(path.join(pageDir, "index.ts"), [
+    "const rules = {",
+    "  userId: [",
+    "    { required: true, message: \"请选择用户\", trigger: \"blur\" }",
+    "  ],",
+    "  amount: { required: true, message: \"请输入金额\", trigger: \"blur\" }",
+    "};"
+  ].join("\n"), "utf8");
+
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
+  const moduleZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/order/transactions/zh.json"), "utf8"));
+
+  assert.equal(moduleZh.rules.userId, "请选择用户");
+  assert.equal(moduleZh.rules.amount, "请输入金额");
+}
+
+function testModuleDirRulesMessageFallback() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-rules-fallback-"));
+  const targetDir = path.join(tempDir, "project");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+  const pageDir = path.join(targetDir, "src/views/order/transactions");
+
+  fs.mkdirSync(pageDir, { recursive: true });
+  fs.writeFileSync(path.join(pageDir, "index.ts"), [
+    "const rules = {",
+    "  amount: [",
+    "    { required: true, message: \"请输入金额\", trigger: \"blur\" },",
+    "    { validator: checkAmount, message: \"金额必须大于0\", trigger: \"blur\" }",
+    "  ],",
+    "  status: [",
+    "    { required: true, message: flag ? \"启用\" : \"停用\", trigger: \"blur\" }",
+    "  ]",
+    "};"
+  ].join("\n"), "utf8");
+
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
+  const moduleZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/order/transactions/zh.json"), "utf8"));
+  const flattened = flattenNestedObject(moduleZh);
+  const allValues = new Set(Object.values(flattened));
+
+  assert.equal(allValues.has("请输入金额"), true);
+  assert.equal(allValues.has("金额必须大于0"), true);
+  assert.equal(moduleZh.rules.amount === "请输入金额" || moduleZh.rules.amount === "金额必须大于0", true);
+  assert.equal(typeof moduleZh.auto_001, "string");
+  assert.equal(moduleZh.rules.status, undefined);
+}
+
+function testModuleDirRulesMessagePreferAnchorOverAutoReuse() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-rules-prefer-anchor-"));
+  const targetDir = path.join(tempDir, "project");
+  const outputFile = path.join(tempDir, "i18n/zh.json");
+  const pageDir = path.join(targetDir, "src/views/order/transactions");
+
+  fs.mkdirSync(pageDir, { recursive: true });
+  fs.writeFileSync(path.join(pageDir, "index.ts"), [
+    "const rules = {",
+    "  userId: [",
+    "    { required: true, message: \"请选择用户\", trigger: \"blur\" }",
+    "  ]",
+    "};"
+  ].join("\n"), "utf8");
+
+  writeJson(path.join(tempDir, "i18n/order/transactions/zh.json"), {
+    auto_005: "请选择用户"
+  });
+
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "module-dir"]);
+  const moduleZh = JSON.parse(fs.readFileSync(path.join(tempDir, "i18n/order/transactions/zh.json"), "utf8"));
+
+  assert.equal(moduleZh.rules.userId, "请选择用户");
+  assert.equal(moduleZh.auto_005, "请选择用户");
 }
 
 function testTemplateWhitelistSupport() {
@@ -323,6 +586,32 @@ function testTemplateWhitelistSupport() {
   assert.match(output, /:label="\$t\('/);
   assert.match(output, /:placeholder="\$t\('/);
   assert.match(output, /\[skip:template_unsupported] 不应替换/);
+}
+
+function testTemplateTrailingSpaceReplacement() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-template-trailing-space-"));
+  const targetDir = path.join(tempDir, "src");
+  const outputFile = path.join(tempDir, "zh.json");
+  const reportFile = path.join(tempDir, "replace-report.json");
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(path.join(targetDir, "sample.vue"), [
+    "<template>",
+    "  <el-form-item label=\"订单id \">",
+    "    <el-input placeholder=\"订单id \" />",
+    "  </el-form-item>",
+    "  <el-table-column label=\"订单id \" />",
+    "</template>"
+  ].join("\n"), "utf8");
+
+  const output = runCli(["replace", "--dir", targetDir, "--output", outputFile, "--dry-run", "--report", reportFile], {
+    withoutScriptRules: true
+  });
+
+  assert.match(output, /replaced: 3/);
+  const report = JSON.parse(fs.readFileSync(reportFile, "utf8"));
+  assert.equal(report.summary.replaceable_count, 3);
+  assert.equal(report.summary.replaced_count, 3);
 }
 
 function testScriptWhitelistSupport() {
@@ -515,7 +804,7 @@ function testVueSfcWhitelistMainline() {
 
   const replaceOutput = runCli(["replace", "--dir", targetDir, "--output", outputFile, "--dry-run", "--report", reportFile]);
   assert.match(replaceOutput, /sample\.vue:45[\s\S]*:label="\$t\('/);
-  assert.match(replaceOutput, /sample\.vue:66[\s\S]*\{\{ \$t\("module\.auto_/);
+  assert.match(replaceOutput, /sample\.vue:\d+[\s\S]*\{\{ \$t\("module\.auto_/);
   assert.match(replaceOutput, /sample\.vue:75[\s\S]*\+ t\("module\.auto_/);
   assert.match(replaceOutput, /sample\.vue:100[\s\S]*\+ t\("module\.auto_/);
   assert.match(replaceOutput, /replaced: 31/);
@@ -607,6 +896,8 @@ function testStructuredReports() {
   assert.equal(typeof replaceReport.summary.replaceable_count, "number");
   assert.equal(typeof replaceReport.summary.policy_skipped_count, "number");
   assert.equal(typeof replaceReport.summary.script_unsupported_count, "number");
+  assert.equal(typeof replaceReport.summary.script_rules_enabled, "boolean");
+  assert.equal(replaceReport.summary.script_rules_enabled, true);
   assert.equal(Array.isArray(replaceReport.summary.changed_files), true);
   assert.equal(typeof replaceReport.summary.skipped_reasons, "object");
   assert.equal(typeof replaceReport.summary.matched_rule_distribution, "object");
@@ -702,6 +993,75 @@ function testReportExplainability() {
   assert.equal(sampleRules.includes("template_unsupported_attr_title"), true);
 }
 
+function testScriptRulesAreExplicit() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-script-explicit-"));
+  const targetDir = path.join(tempDir, "src");
+  const outputFile = path.join(tempDir, "zh.json");
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(path.join(targetDir, "sample.ts"), [
+    'this.title = "用户管理";',
+    'this.$modal.msgSuccess("保存成功");',
+    'const rules = [{ required: true, message: "请输入姓名", trigger: "blur" }];'
+  ].join("\n"), "utf8");
+
+  const noRulesOutput = runCli(["replace", "--dir", targetDir, "--output", outputFile, "--dry-run"], {
+    withoutScriptRules: true
+  });
+  assert.match(noRulesOutput, /\[skip:script_unsupported] "用户管理"/);
+  assert.match(noRulesOutput, /\[skip:script_unsupported] "保存成功"/);
+  assert.doesNotMatch(noRulesOutput, /script_this_title/);
+  assert.doesNotMatch(noRulesOutput, /modal_msg_success/);
+
+  const withRulesOutput = runCli(["replace", "--dir", targetDir, "--output", outputFile, "--dry-run"]);
+  assert.match(withRulesOutput, /t\("module\.auto_001"\)/);
+  assert.match(withRulesOutput, /t\("module\.auto_002"\)/);
+
+  const noRulesReportFile = path.join(tempDir, "no-rules.report.json");
+  runCli(["replace", "--dir", targetDir, "--output", outputFile, "--dry-run", "--report", noRulesReportFile], {
+    withoutScriptRules: true
+  });
+  const noRulesReport = JSON.parse(fs.readFileSync(noRulesReportFile, "utf8"));
+  assert.equal(noRulesReport.summary.script_rules_enabled, false);
+}
+
+function testScriptRulesFileValidation() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-script-rule-invalid-"));
+  const targetDir = path.join(tempDir, "src");
+  const outputFile = path.join(tempDir, "zh.json");
+  const badRulesFile = path.join(tempDir, "bad-rules.json");
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(path.join(targetDir, "sample.ts"), 'this.title = "用户管理";\n', "utf8");
+  fs.writeFileSync(badRulesFile, JSON.stringify({ scriptRules: [{ id: "bad", type: "call", callee: "this.$modal.msgSuccess" }] }, null, 2), "utf8");
+
+  const result = runCliRaw(["scan", "--dir", targetDir, "--script-rules", badRulesFile], false);
+  assert.equal(result.status, 4);
+  assert.match(result.stderr, /Invalid script rules/);
+}
+
+function testInitScriptRulesCommand() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-init-rules-"));
+  const outFile = path.join(tempDir, "i18n/script-rules.json");
+  const aliasOutFile = path.join(tempDir, "alias/i18n/script-rules.json");
+  const positionalOutFile = path.join(tempDir, "positional/i18n/script-rules.json");
+
+  runCliRaw(["init-script-rules", "--out", outFile]);
+  assert.equal(fs.existsSync(outFile), true);
+  const generated = fs.readFileSync(outFile, "utf8");
+  assert.match(generated, /^\/\/ i18n script rules template/);
+  const parsed = parseScriptRulesWithComments(generated);
+  assert.equal(Array.isArray(parsed.scriptRules), true);
+  assert.equal(parsed.scriptRules.some((rule) => rule.type === "assignment"), true);
+  assert.equal(parsed.scriptRules.some((rule) => rule.type === "call"), true);
+
+  runCliRaw(["init", "--out", path.join(tempDir, "alias")]);
+  assert.equal(fs.existsSync(aliasOutFile), true);
+
+  runCliRaw(["init", path.join(tempDir, "positional")]);
+  assert.equal(fs.existsSync(positionalOutFile), true);
+}
+
 function testUsageExitCode() {
   const result = runCliRaw(["scan", "--report"], false);
 
@@ -709,8 +1069,11 @@ function testUsageExitCode() {
   assert.match(result.stderr, /Missing value for --report/);
 }
 
-function runCli(args) {
-  return execFileSync("node", [cliPath, ...args], {
+function runCli(args, options = {}) {
+  const withScriptRules = !options.withoutScriptRules && !args.includes("--script-rules") && !args.includes("init-script-rules");
+  const finalArgs = withScriptRules ? [...args, "--script-rules", defaultScriptRulesFile] : args;
+
+  return execFileSync("node", [cliPath, ...finalArgs], {
     cwd: workspace,
     encoding: "utf8"
   });
@@ -732,4 +1095,23 @@ function runCliRaw(args, expectSuccess = true) {
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+}
+
+function flattenNestedObject(input, prefix = "", output = {}) {
+  for (const [key, value] of Object.entries(input)) {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      flattenNestedObject(value, nextKey, output);
+    } else {
+      output[nextKey] = value;
+    }
+  }
+  return output;
+}
+
+function parseScriptRulesWithComments(content) {
+  const lines = content
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("//"));
+  return JSON.parse(lines.join("\n"));
 }

@@ -2,6 +2,7 @@ import { collectSourceFiles } from "../core/files.js";
 import type { CommandOptions } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
 import { scanProject } from "../scanner/scan.js";
+import { resolveScriptRules } from "./script-rules.js";
 import {
   buildMatchedRuleDistribution,
   buildScanDetails,
@@ -17,7 +18,8 @@ import {
 export function runScanCommand(options: CommandOptions, logger: Logger): number {
   logger.debug(`scan targetDir=${options.targetDir}`);
 
-  const matches = scanProject(options.targetDir);
+  const scriptRules = resolveScriptRules(options, logger);
+  const matches = scanProject(options.targetDir, scriptRules);
   const filesScanned = countSourceFiles(options.targetDir);
   const allFiles = collectSourceFiles(options.targetDir);
   const details = buildScanDetails(allFiles, matches);
