@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import path from "node:path";
 import { collectSourceFiles, ensureParentDir } from "../core/files.js";
+import { toDisplayPath } from "../core/display-path.js";
 import type {
   BaseReport,
   CommandOptions,
@@ -47,9 +47,9 @@ export function createBaseReport(
   return {
     summary: {
       command,
-      target_dir: options.targetDir,
-      output_file: command === "scan" ? undefined : options.outputFile,
-      report_file: options.reportFile,
+      target_dir: toDisplayPath(options.targetDir),
+      output_file: command === "scan" ? undefined : toDisplayPath(options.outputFile),
+      report_file: options.reportFile ? toDisplayPath(options.reportFile) : undefined,
       dry_run: options.dryRun,
       files_scanned: summary.filesScanned,
       candidates_found: summary.candidatesFound,
@@ -67,8 +67,8 @@ export function createBaseReport(
       // script_rules_enabled: 当前命令是否显式启用了外部 script 业务规则。
       script_rules_enabled: Boolean(options.scriptRulesFile),
       matched_rule_distribution: summary.matchedRuleDistribution,
-      changed_files: summary.changedFiles.map((item) => path.relative(process.cwd(), item)),
-      unchanged_files: summary.unchangedFiles.map((item) => path.relative(process.cwd(), item)),
+      changed_files: summary.changedFiles.map((item) => toDisplayPath(item)),
+      unchanged_files: summary.unchangedFiles.map((item) => toDisplayPath(item)),
       key_reused_count: summary.keyReusedCount,
       key_created_count: summary.keyCreatedCount
     },
@@ -188,7 +188,7 @@ export function uniqueStrings(items: string[]): string[] {
 
 function createEmptyFileDetail(filePath: string): FileReportDetail {
   return {
-    file: path.relative(process.cwd(), filePath),
+    file: toDisplayPath(filePath),
     candidates_found: 0,
     replaced_count: 0,
     skipped_count: 0,

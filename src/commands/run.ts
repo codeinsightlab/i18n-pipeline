@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import type { CommandOptions } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
 import { extractModulePrefix } from "../core/keygen.js";
+import { toDisplayPath } from "../core/display-path.js";
 import { ensureParentDir } from "../core/files.js";
 import { runExtractCommand } from "./extract.js";
 import { runReplaceCommand } from "./replace.js";
@@ -162,7 +163,7 @@ function printConfigSummary(command: "run" | "apply", options: CommandOptions, l
   logger.info(`structure: ${options.resourceStructure}${formatDefaultLabel(options.explicitConfig?.resourceStructure)}`);
   logger.info(`mode: ${options.extractMode}${formatDefaultLabel(options.explicitConfig?.extractMode)}`);
   logger.info(`git-check: ${options.gitCheck}${formatDefaultLabel(options.explicitConfig?.gitCheck)}`);
-  logger.info(`script-rules: ${options.scriptRulesFile ? path.relative(process.cwd(), options.scriptRulesFile) : "disabled"}`);
+  logger.info(`script-rules: ${options.scriptRulesFile ? toDisplayPath(options.scriptRulesFile) : "disabled"}`);
 
   const missingDefaults: string[] = [];
 
@@ -217,13 +218,13 @@ function writeCompositeReport(
   const report = {
     config: {
       command,
-      dir: options.targetDir,
-      output: options.outputFile,
+      dir: toDisplayPath(options.targetDir),
+      output: toDisplayPath(options.outputFile),
       structure: options.resourceStructure,
       mode: options.extractMode,
       "git-check": options.gitCheck,
-      report: options.reportFile,
-      "script-rules": options.scriptRulesFile
+      report: options.reportFile ? toDisplayPath(options.reportFile) : undefined,
+      "script-rules": options.scriptRulesFile ? toDisplayPath(options.scriptRulesFile) : undefined
     },
     summary: {
       scan: scanReport ? {
@@ -267,7 +268,7 @@ function writeCompositeReport(
 
   ensureParentDir(options.reportFile);
   fs.writeFileSync(options.reportFile, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  logger.info(`Composite report written to ${path.relative(process.cwd(), options.reportFile)}.`);
+  logger.info(`Composite report written to ${toDisplayPath(options.reportFile)}.`);
 }
 
 function buildModuleDistribution(details: Array<{ file: string; candidates_found: number }>, targetDir: string): Record<string, number> {

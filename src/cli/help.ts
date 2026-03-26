@@ -5,17 +5,19 @@ Usage:
   i18n <command> [options]
 
 Commands:
-  scan       Scan supported source files for Chinese candidates
-  extract    Generate zh.json from scanned candidates
-  replace    Replace supported candidates with i18n calls
+  [Main]
   run        Run scan + extract + replace --dry-run
   apply      Run extract + replace
   report     Generate static HTML quality report
+  [Debug]
+  scan       Scan supported source files for Chinese candidates
+  extract    Generate zh.json from scanned candidates
+  replace    Replace supported candidates with i18n calls
   init       Shortcut for init-script-rules
   init-script-rules  Generate script rules template JSON
 
 Common Options:
-  --dir <path>       Target directory (required for scan/extract/replace/run/apply/report)
+  --dir <path>       Target directory (default: current working directory)
   --output <file>    Output zh.json path (default: ./i18n/zh.json)
   --script-rules <file> Enable external script business rules from JSON
   --structure <type> Resource structure: module-dir (default) | single

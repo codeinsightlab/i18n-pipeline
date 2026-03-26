@@ -16,6 +16,7 @@ import {
   writeReport
 } from "./shared.js";
 import { collectSourceFiles } from "../core/files.js";
+import { toDisplayPath } from "../core/display-path.js";
 import { loadResourceMap } from "../core/resources.js";
 import { resolveScriptRules } from "./script-rules.js";
 
@@ -36,13 +37,13 @@ export function runReplaceCommand(options: CommandOptions, logger: Logger): numb
   const details = buildReplaceDetails(allFiles, matches, report);
 
   for (const change of report.changes) {
-    logger.info(`${change.filePath.replace(`${process.cwd()}/`, "")}:${change.line}`);
+    logger.info(`${toDisplayPath(change.filePath)}:${change.line}`);
     logger.info(`  - ${change.original}`);
     logger.info(`  + ${change.replacement}`);
   }
 
   for (const item of report.skipped) {
-    logger.info(`${item.filePath.replace(`${process.cwd()}/`, "")}:${item.line}  [skip:${item.reason}] ${item.raw}`);
+    logger.info(`${toDisplayPath(item.filePath)}:${item.line}  [skip:${item.reason}] ${item.raw}`);
   }
 
   logger.info("");

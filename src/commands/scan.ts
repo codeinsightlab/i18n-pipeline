@@ -1,4 +1,5 @@
 import { collectSourceFiles } from "../core/files.js";
+import { toDisplayPath } from "../core/display-path.js";
 import type { CommandOptions } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
 import { scanProject } from "../scanner/scan.js";
@@ -50,7 +51,7 @@ export function runScanCommand(options: CommandOptions, logger: Logger): number 
   for (const match of matches) {
     const skipTag = match.skipReason ? ` [skip:${match.skipReason}]` : "";
     logger.info(
-      `${match.filePath.replace(`${process.cwd()}/`, "")}:${match.line}:${match.column}  [${match.contextType}]${skipTag} ${match.text}`
+      `${toDisplayPath(match.filePath)}:${match.line}:${match.column}  [${match.contextType}]${skipTag} ${match.text}`
     );
   }
 

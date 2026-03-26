@@ -172,30 +172,6 @@ function isGitCheckMode(value: string): value is CommandOptions["gitCheck"] {
   return value === "warn" || value === "strict" || value === "off";
 }
 
-export function ensureDirProvided(argv: string[]): void {
-  const [maybeCommand, ...restArgs] = argv;
-
-  if (!maybeCommand || maybeCommand.startsWith("-")) {
-    return;
-  }
-
-  if (!isCommandName(maybeCommand)) {
-    return;
-  }
-
-  if (maybeCommand === "init-script-rules" || maybeCommand === "init") {
-    return;
-  }
-
-  if (restArgs.includes("--help") || restArgs.includes("-h") || restArgs.includes("--version") || restArgs.includes("-v")) {
-    return;
-  }
-
-  if (!restArgs.includes("--dir")) {
-    throw new CliUsageError("Missing required --dir <path>.");
-  }
-}
-
 function isInitCommand(command: CommandName | undefined): boolean {
   return command === "init-script-rules" || command === "init";
 }

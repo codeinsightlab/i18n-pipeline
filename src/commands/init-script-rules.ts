@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Logger } from "../cli/logger.js";
+import { toDisplayPath } from "../core/display-path.js";
 import { ensureParentDir } from "../core/files.js";
 import { renderScriptRulesTemplateWithComments } from "../core/script-rules.js";
 
@@ -8,7 +9,7 @@ export function runInitScriptRulesCommand(outFile: string | undefined, logger: L
   const targetFile = resolveInitOutFile(outFile);
   ensureParentDir(targetFile);
   fs.writeFileSync(targetFile, renderScriptRulesTemplateWithComments(), "utf8");
-  logger.info(`Script rules template written to ${path.relative(process.cwd(), targetFile)}.`);
+  logger.info(`Script rules template written to ${toDisplayPath(targetFile)}.`);
   return 0;
 }
 

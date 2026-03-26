@@ -14,7 +14,7 @@ import { runReplaceCommand } from "../commands/replace.js";
 import { runScanCommand } from "../commands/scan.js";
 import { formatHelp } from "./help.js";
 import { createLogger } from "./logger.js";
-import { CliUsageError, ensureDirProvided, parseCliArgs } from "./parse-args.js";
+import { CliUsageError, parseCliArgs } from "./parse-args.js";
 
 async function main(): Promise<void> {
   const [, , ...argv] = process.argv;
@@ -34,8 +34,6 @@ async function main(): Promise<void> {
       process.exitCode = parsed.missingCommand ? EXIT_CODE_USAGE_ERROR : EXIT_CODE_SUCCESS;
       return;
     }
-
-    ensureDirProvided(argv);
 
     const logger = createLogger(parsed.options.debug);
     logger.debug(`command=${parsed.command}`);

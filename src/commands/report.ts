@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { collectSourceFiles, ensureParentDir } from "../core/files.js";
+import { toDisplayPath } from "../core/display-path.js";
 import { extractModulePrefix, parseAutoKey, parseModuleScopedKey } from "../core/keygen.js";
 import type { CommandOptions, ExtractConflictDiagnostic, ExtractScopeDiagnostic, ScanMatch } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
@@ -159,8 +160,8 @@ export function runReportCommand(options: CommandOptions, logger: Logger): numbe
 
   const report: HumanReadableReport = {
     generated_at: new Date().toISOString(),
-    target_dir: options.targetDir,
-    resource_file: options.outputFile,
+    target_dir: toDisplayPath(options.targetDir),
+    resource_file: toDisplayPath(options.outputFile),
     structure: options.resourceStructure,
     summary,
     groups,
@@ -179,8 +180,8 @@ export function runReportCommand(options: CommandOptions, logger: Logger): numbe
   fs.writeFileSync(jsonFile, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   fs.writeFileSync(htmlFile, renderHtml(report), "utf8");
 
-  logger.info(`Report generated: ${path.relative(process.cwd(), htmlFile)}`);
-  logger.info(`Summary JSON: ${path.relative(process.cwd(), jsonFile)}`);
+  logger.info(`Report generated: ${toDisplayPath(htmlFile)}`);
+  logger.info(`Summary JSON: ${toDisplayPath(jsonFile)}`);
   return 0;
 }
 
@@ -207,8 +208,8 @@ function runReportFromSource(options: CommandOptions, logger: Logger, htmlFile: 
   ensureParentDir(jsonFile);
   fs.writeFileSync(jsonFile, `${JSON.stringify(persistedJson, null, 2)}\n`, "utf8");
   fs.writeFileSync(htmlFile, html, "utf8");
-  logger.info(`Report generated from source: ${path.relative(process.cwd(), htmlFile)}`);
-  logger.info(`Source JSON copied to: ${path.relative(process.cwd(), jsonFile)}`);
+  logger.info(`Report generated from source: ${toDisplayPath(htmlFile)}`);
+  logger.info(`Source JSON copied to: ${toDisplayPath(jsonFile)}`);
   return 0;
 }
 
@@ -572,7 +573,7 @@ function withRelativeFile(item: ReportRow): ReportRow {
 }
 
 function toRelative(filePath: string): string {
-  return path.relative(process.cwd(), filePath) || filePath;
+  return toDisplayPath(filePath);
 }
 
 function replaceExtension(filePath: string, extension: string): string {

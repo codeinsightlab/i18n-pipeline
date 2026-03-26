@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import path from "node:path";
 import { collectSourceFiles } from "../core/files.js";
+import { toDisplayPath } from "../core/display-path.js";
 import type { CommandOptions } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
 import { extractEntries, toResourceMap } from "../extractor/extract.js";
@@ -58,12 +58,12 @@ export function runExtractCommand(options: CommandOptions, logger: Logger): numb
     : [];
 
   if (shouldWriteResources && changedFiles.length > 0) {
-    logger.info(`Generated ${path.relative(process.cwd(), options.outputFile)} with ${nextResources.size} key(s).`);
+    logger.info(`Generated ${toDisplayPath(options.outputFile)} with ${nextResources.size} key(s).`);
   } else if (shouldWriteResources && matches.length === 0) {
     logger.info("未发现可提取文本。");
     logger.info("未修改资源文件。");
   } else if (shouldWriteResources) {
-    logger.info(`Generated ${path.relative(process.cwd(), options.outputFile)} with ${nextResources.size} key(s).`);
+    logger.info(`Generated ${toDisplayPath(options.outputFile)} with ${nextResources.size} key(s).`);
     logger.info("资源文件内容未发生变化。");
   } else if (matches.length === 0) {
     logger.info("未发现可提取文本。");

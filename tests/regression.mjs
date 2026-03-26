@@ -9,6 +9,7 @@ const cliPath = path.join(workspace, "dist/cli/index.js");
 const defaultScriptRulesFile = path.join(workspace, "tests/fixtures/script-rules.phase1.json");
 
 await runBuild();
+await testCliDefaultsAndHelp();
 await testScriptRulesTemplateAndLoader();
 await testModulePrefixResolver();
 testKeyStability();
@@ -59,6 +60,19 @@ async function testScriptRulesTemplateAndLoader() {
 
   const validated = validateScriptRulesDocument(JSON.parse(fs.readFileSync(defaultScriptRulesFile, "utf8")), defaultScriptRulesFile);
   assert.equal(validated.scriptRules.length >= 3, true);
+}
+
+async function testCliDefaultsAndHelp() {
+  const { parseCliArgs } = await import("../dist/cli/parse-args.js");
+
+  const parsed = parseCliArgs(["scan"]);
+  assert.equal(parsed.options.targetDir, workspace);
+  assert.equal(parsed.options.resourceStructure, "module-dir");
+
+  const help = runCliRaw(["--help"]).stdout;
+  assert.match(help, /Target directory \(default: current working directory\)/);
+  assert.match(help, /\[Main]/);
+  assert.match(help, /\[Debug]/);
 }
 
 function runBuild() {
@@ -905,6 +919,10 @@ function testStructuredReports() {
   assert.equal(typeof replaceReport.summary.matched_rule_distribution, "object");
   assert.equal(Array.isArray(replaceReport.details), true);
   assert.equal(replaceReport.details.length > 0, true);
+  assert.equal(scanReport.details.every((item) => !String(item.file).includes("\\")), true);
+  assert.equal(extractReport.summary.changed_files.every((item) => !String(item).includes("\\")), true);
+  assert.equal(replaceReport.summary.changed_files.every((item) => !String(item).includes("\\")), true);
+  assert.equal(replaceReport.summary.unchanged_files.every((item) => !String(item).includes("\\")), true);
 
   const detailCandidates = replaceReport.details.reduce((sum, item) => sum + item.candidates_found, 0);
   const detailReplaced = replaceReport.details.reduce((sum, item) => sum + item.replaced_count, 0);
@@ -1023,6 +1041,13 @@ function testHtmlReportCommand() {
   assert.equal(Array.isArray(json.conflicts), true);
   assert.equal(Array.isArray(json.autos), true);
   assert.equal(Array.isArray(json.rankings.auto_top_files), true);
+  assert.equal(typeof json.target_dir, "string");
+  assert.equal(typeof json.resource_file, "string");
+  assert.equal(String(json.target_dir).includes("\\"), false);
+  assert.equal(String(json.resource_file).includes("\\"), false);
+  assert.equal(json.conflicts.every((item) => item.source_files.every((file) => !String(file).includes("\\"))), true);
+  assert.equal(json.autos.every((item) => item.source_files.every((file) => !String(file).includes("\\"))), true);
+  assert.equal(json.autos.every((item) => item.apply_files.every((file) => !String(file).includes("\\"))), true);
 }
 
 function testReportApplyAlignmentAndSourceMode() {
