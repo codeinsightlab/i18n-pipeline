@@ -69,6 +69,55 @@ export interface ExtractItem {
   reused: boolean;
 }
 
+export interface ExtractScopeSourceSample {
+  file_path: string;
+  line: number;
+  matched_rule: MatchedRule;
+  context_type: ContextType;
+}
+
+export interface ExtractScopeFileCount {
+  file_path: string;
+  count: number;
+}
+
+export interface ExtractScopeDiagnostic {
+  key: string;
+  text: string;
+  module_prefix: string;
+  occurrences: number;
+  reused: boolean;
+  group: "form" | "table" | "rules" | "query" | "auto" | "other";
+  preferred_key?: string;
+  preferred_suffix?: string;
+  auto_reason?: string;
+  source_files: string[];
+  source_file_counts: ExtractScopeFileCount[];
+  source_samples: ExtractScopeSourceSample[];
+}
+
+export interface ExtractConflictDiagnostic {
+  candidate_key: string;
+  text: string;
+  module_prefix: string;
+  group: "form" | "table" | "rules" | "query" | "auto" | "other";
+  reason: string;
+  source_files: string[];
+  source_rules: string[];
+  final_key: string;
+  fallback_to_auto: boolean;
+}
+
+export interface ExtractDiagnostics {
+  scopes: ExtractScopeDiagnostic[];
+  conflicts: ExtractConflictDiagnostic[];
+}
+
+export interface ExtractEntriesResult {
+  entries: ExtractItem[];
+  diagnostics: ExtractDiagnostics;
+}
+
 export interface ReplaceChange {
   filePath: string;
   line: number;
@@ -114,6 +163,7 @@ export interface CommandOptions {
   };
   scriptRulesFile?: string;
   reportFile?: string;
+  reportSourceFile?: string;
 }
 
 export interface BaseReport {

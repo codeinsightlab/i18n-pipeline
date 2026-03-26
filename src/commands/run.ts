@@ -167,7 +167,7 @@ function printConfigSummary(command: "run" | "apply", options: CommandOptions, l
   const missingDefaults: string[] = [];
 
   if (!options.explicitConfig?.resourceStructure) {
-    missingDefaults.push("--structure module-dir");
+    // module-dir is now the default structure; no extra hint needed.
   }
 
   if (!options.explicitConfig?.extractMode) {

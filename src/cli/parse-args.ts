@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { CommandOptions } from "../core/types.js";
 
-export type CommandName = "scan" | "extract" | "replace" | "run" | "apply" | "init-script-rules" | "init";
+export type CommandName = "scan" | "extract" | "replace" | "run" | "apply" | "report" | "init-script-rules" | "init";
 
 export interface ParsedCliArgs {
   command?: CommandName;
@@ -51,9 +51,10 @@ function buildParsedArgs(
   const targetDir = readFlagValue(args, "--dir") ?? process.cwd();
   const outputFile = readFlagValue(args, "--output") ?? path.resolve(process.cwd(), "i18n/zh.json");
   const reportFile = readFlagValue(args, "--report");
+  const reportSourceFile = readFlagValue(args, "--report-source");
   const scriptRulesFile = readFlagValue(args, "--script-rules");
   const initOutFile = readFlagValue(args, "--out") ?? (isInitCommand(command) ? positionalArgs[0] : undefined);
-  const resourceStructure = readFlagValue(args, "--structure") ?? "single";
+  const resourceStructure = readFlagValue(args, "--structure") ?? "module-dir";
   const extractMode = readFlagValue(args, "--mode") ?? "merge";
   const gitCheck = readFlagValue(args, "--git-check") ?? "warn";
 
@@ -100,17 +101,19 @@ function buildParsedArgs(
         gitCheck: args.includes("--git-check")
       },
       scriptRulesFile: scriptRulesFile ? path.resolve(scriptRulesFile) : undefined,
-      reportFile: reportFile ? path.resolve(reportFile) : undefined
+      reportFile: reportFile ? path.resolve(reportFile) : undefined,
+      reportSourceFile: reportSourceFile ? path.resolve(reportSourceFile) : undefined
     }
   };
 }
 
 function validateArgs(args: string[]): void {
-  const valuedFlags = ["--dir", "--output", "--report", "--structure", "--mode", "--git-check", "--script-rules", "--out"];
+  const valuedFlags = ["--dir", "--output", "--report", "--report-source", "--structure", "--mode", "--git-check", "--script-rules", "--out"];
   const allowedFlags = new Set([
     "--dir",
     "--output",
     "--report",
+    "--report-source",
     "--structure",
     "--mode",
     "--git-check",
@@ -150,7 +153,7 @@ function readFlagValue(args: string[], flag: string): string | undefined {
 }
 
 function isCommandName(value: string): value is CommandName {
-  return value === "scan" || value === "extract" || value === "replace" || value === "run" || value === "apply" || value === "init-script-rules" || value === "init";
+  return value === "scan" || value === "extract" || value === "replace" || value === "run" || value === "apply" || value === "report" || value === "init-script-rules" || value === "init";
 }
 
 function isExtractMode(value: string): value is CommandOptions["extractMode"] {
@@ -198,7 +201,7 @@ function isInitCommand(command: CommandName | undefined): boolean {
 }
 
 function collectPositionalArgs(args: string[]): string[] {
-  const valuedFlags = new Set(["--dir", "--output", "--report", "--structure", "--mode", "--git-check", "--script-rules", "--out"]);
+  const valuedFlags = new Set(["--dir", "--output", "--report", "--report-source", "--structure", "--mode", "--git-check", "--script-rules", "--out"]);
   const positional: string[] = [];
 
   for (let index = 0; index < args.length; index += 1) {

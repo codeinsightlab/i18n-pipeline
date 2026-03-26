@@ -39,6 +39,8 @@ testReplaceIdempotency();
 testCommentRangesFiltered();
 testRiskyReport();
 testStructuredReports();
+testHtmlReportCommand();
+testReportApplyAlignmentAndSourceMode();
 testReportExplainability();
 testScriptRulesAreExplicit();
 testScriptRulesFileValidation();
@@ -117,8 +119,8 @@ function testKeyStability() {
   fs.writeFileSync(path.join(dirB, "z.ts"), 'this.$modal.msgSuccess("继续提交");\n', "utf8");
   fs.writeFileSync(path.join(dirB, "y.ts"), 'this.title = "欢迎登录";\nconst rules = [{ required: true, message: "保存", trigger: "blur" }];\n', "utf8");
 
-  runCli(["extract", "--dir", dirA, "--output", outputA]);
-  runCli(["extract", "--dir", dirB, "--output", outputB]);
+  runCli(["extract", "--dir", dirA, "--output", outputA, "--structure", "single"]);
+  runCli(["extract", "--dir", dirB, "--output", outputB, "--structure", "single"]);
 
   const first = fs.readFileSync(outputA, "utf8");
   const second = fs.readFileSync(outputB, "utf8");
@@ -142,7 +144,7 @@ function testExtractModes() {
     "module.auto_099": "旧文案"
   }, null, 2), "utf8");
 
-  runCli(["extract", "--dir", targetDir, "--output", outputFile]);
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--structure", "single"]);
   const overwriteResult = JSON.parse(fs.readFileSync(outputFile, "utf8"));
   assert.equal(overwriteResult["module.auto_005"], "欢迎登录");
   assert.equal(overwriteResult["module.auto_099"], "旧文案");
@@ -151,7 +153,7 @@ function testExtractModes() {
     "module.auto_005": "欢迎登录",
     "module.auto_099": "旧文案"
   }, null, 2), "utf8");
-  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--mode", "merge"]);
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--mode", "merge", "--structure", "single"]);
   const mergeResult = JSON.parse(fs.readFileSync(outputFile, "utf8"));
   assert.equal(mergeResult["module.auto_005"], "欢迎登录");
   assert.equal(mergeResult["module.auto_099"], "旧文案");
@@ -160,7 +162,7 @@ function testExtractModes() {
     "module.auto_005": "欢迎登录",
     "module.auto_099": "旧文案"
   }, null, 2), "utf8");
-  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--mode", "clean"]);
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--mode", "clean", "--structure", "single"]);
   const cleanResult = JSON.parse(fs.readFileSync(outputFile, "utf8"));
   assert.equal(cleanResult["module.auto_001"], "欢迎登录");
   assert.equal("module.auto_005" in cleanResult, false);
@@ -689,13 +691,13 @@ function testCompositeCommands() {
 
   const runOutput = runCli(["run", "--dir", targetDir, "--output", outputFile, "--report", runReportFile]);
   assert.match(runOutput, /\[配置]/);
-  assert.match(runOutput, /structure: single（默认）/);
+  assert.match(runOutput, /structure: module-dir（默认）/);
   assert.match(runOutput, /mode: merge（默认）/);
   assert.match(runOutput, /git-check: warn（默认）/);
   assert.match(runOutput, /你可以使用以下命令指定参数：/);
-  assert.match(runOutput, /i18n run --dir .* --structure module-dir --git-check strict/);
+  assert.match(runOutput, /i18n run --dir .* --git-check strict/);
   assert.match(runOutput, /scan_count:/);
-  assert.match(runOutput, /Planned 25 resource key\(s\)\./);
+  assert.match(runOutput, /Planned 28 resource key\(s\)\./);
   assert.match(runOutput, /未修改资源文件。/);
   assert.match(runOutput, /Planned 41 replacement\(s\)\./);
   assert.match(runOutput, /活动标题不能为空/);
@@ -704,34 +706,34 @@ function testCompositeCommands() {
 
   const runReport = JSON.parse(fs.readFileSync(runReportFile, "utf8"));
   assert.equal(runReport.config.command, "run");
-  assert.equal(runReport.config.structure, "single");
+  assert.equal(runReport.config.structure, "module-dir");
   assert.equal(runReport.summary.scan.candidates_found, 41);
   assert.equal(runReport.summary.replace.replaced_count, 41);
   assert.equal(Array.isArray(runReport.details.replace), true);
 
   const applyOutput = runCli(["apply", "--dir", targetDir, "--output", outputFile, "--report", applyReportFile]);
   assert.match(applyOutput, /\[配置]/);
-  assert.match(applyOutput, /Generated .*zh\.json with 25 key\(s\)\./);
+  assert.match(applyOutput, /Generated .*zh\.json with 28 key\(s\)\./);
   assert.match(applyOutput, /Applied 41 replacement\(s\)\./);
   assert.match(applyOutput, /Composite report written to/);
 
   const applyReport = JSON.parse(fs.readFileSync(applyReportFile, "utf8"));
   assert.equal(applyReport.config.command, "apply");
-  assert.equal(applyReport.summary.extract.key_created_count, 25);
+  assert.equal(applyReport.summary.extract.key_created_count, 28);
   assert.equal(applyReport.summary.replace.replaced_count, 41);
   assert.equal(typeof applyReport.summary.module_distribution, "object");
 
-  const zhAfterFirstApply = fs.readFileSync(outputFile, "utf8");
+  const zhAfterFirstApply = snapshotResourceFiles(outputFile);
   const secondApplyOutput = runCli(["apply", "--dir", targetDir, "--output", outputFile]);
-  const zhAfterSecondApply = fs.readFileSync(outputFile, "utf8");
+  const zhAfterSecondApply = snapshotResourceFiles(outputFile);
   assert.equal(zhAfterSecondApply, zhAfterFirstApply);
   assert.match(secondApplyOutput, /未发现可提取文本。/);
   assert.match(secondApplyOutput, /未修改资源文件。/);
   assert.match(secondApplyOutput, /Applied 0 replacement\(s\)\./);
 
-  const zhBeforeRun = fs.readFileSync(outputFile, "utf8");
+  const zhBeforeRun = snapshotResourceFiles(outputFile);
   const runAfterApply = runCli(["run", "--dir", targetDir, "--output", outputFile]);
-  const zhAfterRun = fs.readFileSync(outputFile, "utf8");
+  const zhAfterRun = snapshotResourceFiles(outputFile);
   assert.equal(zhAfterRun, zhBeforeRun);
   assert.match(runAfterApply, /No Chinese string literals found\./);
   assert.match(runAfterApply, /未发现可提取文本。/);
@@ -879,7 +881,7 @@ function testStructuredReports() {
   fs.cpSync(path.join(workspace, "fixtures/realish"), targetDir, { recursive: true });
 
   runCli(["scan", "--dir", targetDir, "--report", scanReportFile]);
-  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--report", extractReportFile]);
+  runCli(["extract", "--dir", targetDir, "--output", outputFile, "--report", extractReportFile, "--structure", "single"]);
   runCli(["replace", "--dir", targetDir, "--output", outputFile, "--report", replaceReportFile, "--dry-run"]);
 
   const scanReport = JSON.parse(fs.readFileSync(scanReportFile, "utf8"));
@@ -993,6 +995,59 @@ function testReportExplainability() {
   assert.equal(sampleRules.includes("template_unsupported_attr_title"), true);
 }
 
+function testHtmlReportCommand() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-html-report-"));
+  const targetDir = path.join(tempDir, "realish");
+  const outputFile = path.join(tempDir, "zh.json");
+  const htmlReportFile = path.join(tempDir, "quality/i18n-report.html");
+  const jsonReportFile = path.join(tempDir, "quality/i18n-report.json");
+
+  fs.cpSync(path.join(workspace, "fixtures/realish"), targetDir, { recursive: true });
+
+  runCli(["report", "--dir", targetDir, "--output", outputFile, "--report", htmlReportFile]);
+
+  assert.equal(fs.existsSync(htmlReportFile), true);
+  assert.equal(fs.existsSync(jsonReportFile), true);
+
+  const html = fs.readFileSync(htmlReportFile, "utf8");
+  const json = JSON.parse(fs.readFileSync(jsonReportFile, "utf8"));
+
+  assert.match(html, /i18n 最小可用质量报告/);
+  assert.match(html, /总览摘要/);
+  assert.match(html, /冲突明细/);
+  assert.match(html, /Auto 明细/);
+  assert.equal(typeof json.summary.files_scanned, "number");
+  assert.equal(typeof json.summary.hits_total, "number");
+  assert.equal(typeof json.summary.auto_keys, "number");
+  assert.equal(typeof json.summary.conflicts, "number");
+  assert.equal(Array.isArray(json.conflicts), true);
+  assert.equal(Array.isArray(json.autos), true);
+  assert.equal(Array.isArray(json.rankings.auto_top_files), true);
+}
+
+function testReportApplyAlignmentAndSourceMode() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-report-align-"));
+  const targetDir = path.join(tempDir, "realish");
+  const outputFile = path.join(tempDir, "zh.json");
+  const preHtmlFile = path.join(tempDir, "quality/pre-report.html");
+  const preJsonFile = path.join(tempDir, "quality/pre-report.json");
+  const applyReportFile = path.join(tempDir, "logs/apply-report.json");
+  const sourceHtmlFile = path.join(tempDir, "quality/from-source.html");
+
+  fs.cpSync(path.join(workspace, "fixtures/realish"), targetDir, { recursive: true });
+
+  runCli(["report", "--dir", targetDir, "--output", outputFile, "--report", preHtmlFile]);
+  runCli(["apply", "--dir", targetDir, "--output", outputFile, "--report", applyReportFile]);
+  runCli(["report", "--dir", targetDir, "--output", outputFile, "--report-source", applyReportFile, "--report", sourceHtmlFile]);
+
+  const pre = JSON.parse(fs.readFileSync(preJsonFile, "utf8"));
+  const apply = JSON.parse(fs.readFileSync(applyReportFile, "utf8"));
+  const sourceHtml = fs.readFileSync(sourceHtmlFile, "utf8");
+
+  assert.equal(pre.summary.apply_preview_replaced_count, apply.summary.replace.replaced_count);
+  assert.match(sourceHtml, /执行日志报告（source）/);
+}
+
 function testScriptRulesAreExplicit() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "i18n-script-explicit-"));
   const targetDir = path.join(tempDir, "src");
@@ -1095,6 +1150,36 @@ function runCliRaw(args, expectSuccess = true) {
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+}
+
+function snapshotResourceFiles(outputFile) {
+  const rootDir = path.dirname(outputFile);
+  const files = [];
+
+  if (fs.existsSync(rootDir)) {
+    const stack = [rootDir];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+        const fullPath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(fullPath);
+          continue;
+        }
+        if (entry.isFile() && entry.name === "zh.json") {
+          files.push(fullPath);
+        }
+      }
+    }
+  }
+
+  const snapshot = {};
+  for (const filePath of files.sort()) {
+    const relative = path.relative(rootDir, filePath);
+    snapshot[relative] = fs.readFileSync(filePath, "utf8");
+  }
+
+  return JSON.stringify(snapshot, null, 2);
 }
 
 function flattenNestedObject(input, prefix = "", output = {}) {

@@ -10,17 +10,19 @@ Commands:
   replace    Replace supported candidates with i18n calls
   run        Run scan + extract + replace --dry-run
   apply      Run extract + replace
+  report     Generate static HTML quality report
   init       Shortcut for init-script-rules
   init-script-rules  Generate script rules template JSON
 
 Common Options:
-  --dir <path>       Target directory (required for scan/extract/replace/run/apply)
+  --dir <path>       Target directory (required for scan/extract/replace/run/apply/report)
   --output <file>    Output zh.json path (default: ./i18n/zh.json)
   --script-rules <file> Enable external script business rules from JSON
-  --structure <type> Resource structure: single | module-dir
+  --structure <type> Resource structure: module-dir (default) | single
   --mode <name>      Resource update mode: merge (default) | clean
   --git-check <mode> Apply Git safety check: warn | strict | off
-  --report <file>    Write JSON report to file
+  --report <file>    Report file path (JSON for scan/extract/replace/run/apply, HTML for report)
+  --report-source <file> Use existing JSON log/report as report input (for report command)
   --out <path>       Output file or directory (used by init/init-script-rules)
   --dry-run          Preview replacements without writing files
   --debug            Print extra debug information
@@ -44,5 +46,7 @@ Examples:
   i18n init-script-rules --out ./i18n/script-rules.json
   i18n run --dir ./src
   i18n apply --dir ./src --output ./i18n/zh.json --git-check strict
+  i18n report --dir ./src --report ./output/i18n-report.html
+  i18n report --dir ./src --report-source ./output/apply-report.json --report ./output/apply-report.html
 `;
 }

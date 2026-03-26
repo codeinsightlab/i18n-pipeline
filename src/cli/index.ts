@@ -9,6 +9,7 @@ import {
 import { runApplyCommand, runRunCommand } from "../commands/run.js";
 import { runExtractCommand } from "../commands/extract.js";
 import { runInitScriptRulesCommand } from "../commands/init-script-rules.js";
+import { runReportCommand } from "../commands/report.js";
 import { runReplaceCommand } from "../commands/replace.js";
 import { runScanCommand } from "../commands/scan.js";
 import { formatHelp } from "./help.js";
@@ -54,6 +55,9 @@ async function main(): Promise<void> {
         return;
       case "apply":
         process.exitCode = runApplyCommand(parsed.options, logger);
+        return;
+      case "report":
+        process.exitCode = runReportCommand(parsed.options, logger);
         return;
       case "init-script-rules":
       case "init":

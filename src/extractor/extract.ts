@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { ExtractItem, ScanMatch } from "../core/types.js";
+import type {
+  ExtractConflictDiagnostic,
+  ExtractEntriesResult,
+  ExtractItem,
+  ExtractScopeDiagnostic,
+  ScanMatch
+} from "../core/types.js";
 import { extractModulePrefix, generateAutoKey, parseAutoKey, parseModuleScopedKey } from "../core/keygen.js";
 
 export function extractEntries(
@@ -9,6 +15,24 @@ export function extractEntries(
   targetDir: string = process.cwd(),
   structure: "single" | "module-dir" = "single"
 ): ExtractItem[] {
+  return buildExtractionResult(matches, existingResources, targetDir, structure).entries;
+}
+
+export function extractEntriesWithDiagnostics(
+  matches: ScanMatch[],
+  existingResources: Map<string, string> = new Map(),
+  targetDir: string = process.cwd(),
+  structure: "single" | "module-dir" = "single"
+): ExtractEntriesResult {
+  return buildExtractionResult(matches, existingResources, targetDir, structure);
+}
+
+function buildExtractionResult(
+  matches: ScanMatch[],
+  existingResources: Map<string, string>,
+  targetDir: string,
+  structure: "single" | "module-dir"
+): ExtractEntriesResult {
   const extractableMatches = matches.filter((match) => match.extractable);
   const occurrenceByScope = new Map<string, number>();
   const scopeToText = new Map<string, string>();
@@ -16,12 +40,15 @@ export function extractEntries(
   const scopeToKey = new Map<string, string>();
   const scopeToPreferredKey = new Map<string, string>();
   const scopeToPreferredSuffix = new Map<string, string>();
+  const scopeToSourceMatches = new Map<string, ScanMatch[]>();
   const usedKeys = new Set<string>();
   const prefixCounter = new Map<string, number>();
   const textToRelativeFile = new Map<string, string>();
   const globalTextToKey = new Map<string, string>();
   const moduleTextToKey = new Map<string, Map<string, string>>();
   const fileContentCache = new Map<string, string>();
+  const conflicts: ExtractConflictDiagnostic[] = [];
+  const scopes: ExtractScopeDiagnostic[] = [];
 
   for (const [key, text] of existingResources) {
     usedKeys.add(key);
@@ -56,6 +83,9 @@ export function extractEntries(
       occurrenceByScope.set(scope, (occurrenceByScope.get(scope) ?? 0) + 1);
       scopeToText.set(scope, match.text);
       scopeToModulePrefix.set(scope, modulePrefix);
+      const sources = scopeToSourceMatches.get(scope) ?? [];
+      sources.push(match);
+      scopeToSourceMatches.set(scope, sources);
       if (preferredKey && !scopeToPreferredKey.has(scope)) {
         scopeToPreferredKey.set(scope, preferredKey);
       }
@@ -67,6 +97,9 @@ export function extractEntries(
 
     occurrenceByScope.set(match.text, (occurrenceByScope.get(match.text) ?? 0) + 1);
     scopeToText.set(match.text, match.text);
+    const sources = scopeToSourceMatches.get(match.text) ?? [];
+    sources.push(match);
+    scopeToSourceMatches.set(match.text, sources);
     if (preferredKey && !scopeToPreferredKey.has(match.text)) {
       scopeToPreferredKey.set(match.text, preferredKey);
     }
@@ -103,6 +136,17 @@ export function extractEntries(
     return (scopeToText.get(left) ?? "").localeCompare(scopeToText.get(right) ?? "", "zh-Hans-CN");
   });
 
+  const preferredKeyToDistinctText = new Map<string, Set<string>>();
+  for (const scope of sortedScopes) {
+    const preferredKey = scopeToPreferredKey.get(scope);
+    if (!preferredKey) {
+      continue;
+    }
+    const set = preferredKeyToDistinctText.get(preferredKey) ?? new Set<string>();
+    set.add(scopeToText.get(scope) ?? "");
+    preferredKeyToDistinctText.set(preferredKey, set);
+  }
+
   for (const scope of sortedScopes) {
     const text = scopeToText.get(scope) ?? "";
     const modulePrefix = scopeToModulePrefix.get(scope) ?? "module";
@@ -110,9 +154,10 @@ export function extractEntries(
     const existingKey = structure === "module-dir"
       ? moduleTextToKey.get(modulePrefix)?.get(text)
       : globalTextToKey.get(text);
+    const preferredSuffix = scopeToPreferredSuffix.get(scope);
+    const pendingConflicts: Array<{ candidateKey: string; reason: string }> = [];
 
     if (structure === "module-dir" && preferredKey) {
-      const preferredSuffix = scopeToPreferredSuffix.get(scope);
       const directFormPlaceholderKey = preferredSuffix === "placeholder_combo" && preferredKey.includes(".form.")
         ? buildConflictSuffixKey(preferredKey, preferredSuffix)
         : null;
@@ -121,88 +166,216 @@ export function extractEntries(
         const directExistingText = existingResources.get(directFormPlaceholderKey);
         if (directExistingText === text) {
           scopeToKey.set(scope, directFormPlaceholderKey);
-          continue;
-        }
-
-        if (!usedKeys.has(directFormPlaceholderKey)) {
+        } else if (!usedKeys.has(directFormPlaceholderKey)) {
           scopeToKey.set(scope, directFormPlaceholderKey);
           usedKeys.add(directFormPlaceholderKey);
-          continue;
+        } else {
+          pendingConflicts.push({
+            candidateKey: directFormPlaceholderKey,
+            reason: directExistingText && directExistingText !== text
+              ? "same_key_different_message"
+              : "candidate_key_taken"
+          });
         }
       }
 
-      const preferredExistingText = existingResources.get(preferredKey);
-      if (preferredExistingText === text) {
-        scopeToKey.set(scope, preferredKey);
-        continue;
-      }
-
-      if (!usedKeys.has(preferredKey)) {
-        scopeToKey.set(scope, preferredKey);
-        usedKeys.add(preferredKey);
-        continue;
-      }
-
-      const withSuffix = preferredSuffix ? buildConflictSuffixKey(preferredKey, preferredSuffix) : null;
-      if (withSuffix) {
-        const suffixedExistingText = existingResources.get(withSuffix);
-        if (suffixedExistingText === text) {
-          scopeToKey.set(scope, withSuffix);
-          continue;
+      if (!scopeToKey.has(scope)) {
+        const preferredExistingText = existingResources.get(preferredKey);
+        if (preferredExistingText === text) {
+          scopeToKey.set(scope, preferredKey);
+        } else if (!usedKeys.has(preferredKey)) {
+          scopeToKey.set(scope, preferredKey);
+          usedKeys.add(preferredKey);
+        } else {
+          pendingConflicts.push({
+            candidateKey: preferredKey,
+            reason: preferredExistingText && preferredExistingText !== text
+              ? "same_key_different_message"
+              : "candidate_key_taken"
+          });
         }
+      }
 
-        if (!usedKeys.has(withSuffix)) {
-          scopeToKey.set(scope, withSuffix);
-          usedKeys.add(withSuffix);
-          continue;
+      if (!scopeToKey.has(scope)) {
+        const withSuffix = preferredSuffix ? buildConflictSuffixKey(preferredKey, preferredSuffix) : null;
+        if (withSuffix) {
+          const suffixedExistingText = existingResources.get(withSuffix);
+          if (suffixedExistingText === text) {
+            scopeToKey.set(scope, withSuffix);
+          } else if (!usedKeys.has(withSuffix)) {
+            scopeToKey.set(scope, withSuffix);
+            usedKeys.add(withSuffix);
+          } else {
+            pendingConflicts.push({
+              candidateKey: withSuffix,
+              reason: suffixedExistingText && suffixedExistingText !== text
+                ? "same_key_different_message"
+                : "candidate_key_taken"
+            });
+          }
         }
       }
     }
 
-    if (existingKey) {
+    if (!scopeToKey.has(scope) && existingKey) {
       scopeToKey.set(scope, existingKey);
-      continue;
     }
 
-    if (preferredKey && !usedKeys.has(preferredKey)) {
+    if (!scopeToKey.has(scope) && preferredKey && !usedKeys.has(preferredKey)) {
       scopeToKey.set(scope, preferredKey);
       usedKeys.add(preferredKey);
-      continue;
     }
-    if (preferredKey) {
-      const preferredSuffix = scopeToPreferredSuffix.get(scope);
+    if (!scopeToKey.has(scope) && preferredKey) {
       const withSuffix = preferredSuffix ? buildConflictSuffixKey(preferredKey, preferredSuffix) : null;
       if (withSuffix && !usedKeys.has(withSuffix)) {
         scopeToKey.set(scope, withSuffix);
         usedKeys.add(withSuffix);
-        continue;
       }
     }
 
-    let nextIndex = (prefixCounter.get(modulePrefix) ?? 0) + 1;
-    let key = generateAutoKey(modulePrefix, nextIndex);
+    if (!scopeToKey.has(scope)) {
+      let nextIndex = (prefixCounter.get(modulePrefix) ?? 0) + 1;
+      let key = generateAutoKey(modulePrefix, nextIndex);
 
-    while (usedKeys.has(key)) {
-      nextIndex += 1;
-      key = generateAutoKey(modulePrefix, nextIndex);
+      while (usedKeys.has(key)) {
+        nextIndex += 1;
+        key = generateAutoKey(modulePrefix, nextIndex);
+      }
+
+      scopeToKey.set(scope, key);
+      usedKeys.add(key);
+      prefixCounter.set(modulePrefix, nextIndex);
     }
 
-    scopeToKey.set(scope, key);
-    usedKeys.add(key);
-    prefixCounter.set(modulePrefix, nextIndex);
+    const finalKey = scopeToKey.get(scope) ?? generateAutoKey("module", 1);
+    const isAuto = Boolean(parseAutoKey(finalKey));
+    const sourceMatches = scopeToSourceMatches.get(scope) ?? [];
+    const sourceFiles = uniqueSorted(sourceMatches.map((item) => item.filePath));
+    const sourceFileCounts = countByFile(sourceMatches);
+    const group = deriveScopeGroup(finalKey, preferredKey);
+
+    for (const conflict of pendingConflicts) {
+      conflicts.push({
+        candidate_key: conflict.candidateKey,
+        text,
+        module_prefix: modulePrefix,
+        group,
+        reason: conflict.reason,
+        source_files: sourceFiles,
+        source_rules: uniqueSorted(sourceMatches.map((item) => item.matchedRule)),
+        final_key: finalKey,
+        fallback_to_auto: isAuto
+      });
+    }
+
+    scopes.push({
+      key: finalKey,
+      text,
+      module_prefix: modulePrefix,
+      occurrences: occurrenceByScope.get(scope) ?? 0,
+      reused: existingResources.has(finalKey),
+      group,
+      preferred_key: preferredKey,
+      preferred_suffix: preferredSuffix,
+      auto_reason: isAuto ? classifyAutoReason(preferredKey, pendingConflicts, preferredKeyToDistinctText, text) : undefined,
+      source_files: sourceFiles,
+      source_file_counts: sourceFileCounts,
+      source_samples: sourceMatches.slice(0, 8).map((item) => ({
+        file_path: item.filePath,
+        line: item.line,
+        matched_rule: item.matchedRule,
+        context_type: item.contextType
+      }))
+    });
   }
 
-  return sortedScopes.map((scope) => ({
+  const entries = sortedScopes.map((scope) => ({
     key: scopeToKey.get(scope) ?? generateAutoKey("module", 1),
     text: scopeToText.get(scope) ?? "",
     modulePrefix: scopeToModulePrefix.get(scope) ?? "module",
     occurrences: occurrenceByScope.get(scope) ?? 0,
     reused: existingResources.has(scopeToKey.get(scope) ?? "")
   }));
+
+  return {
+    entries,
+    diagnostics: {
+      scopes: scopes.sort((left, right) => left.key.localeCompare(right.key)),
+      conflicts: conflicts.sort((left, right) => {
+        const byKey = left.candidate_key.localeCompare(right.candidate_key);
+        if (byKey !== 0) {
+          return byKey;
+        }
+        return left.text.localeCompare(right.text, "zh-Hans-CN");
+      })
+    }
+  };
 }
 
 export function toResourceMap(entries: ExtractItem[]): Map<string, string> {
   return new Map(entries.map((entry) => [entry.key, entry.text]));
+}
+
+function classifyAutoReason(
+  preferredKey: string | undefined,
+  conflicts: Array<{ candidateKey: string; reason: string }>,
+  preferredKeyToDistinctText: Map<string, Set<string>>,
+  text: string
+): string {
+  if (!preferredKey) {
+    return "no_stable_structured_key";
+  }
+
+  if (conflicts.some((item) => item.reason === "same_key_different_message")) {
+    return "same_key_different_message";
+  }
+
+  const textSet = preferredKeyToDistinctText.get(preferredKey);
+  if (textSet && textSet.size > 1 && textSet.has(text)) {
+    return "multi_message_downgrade";
+  }
+
+  return "conservative_fallback";
+}
+
+function deriveScopeGroup(
+  key: string,
+  preferredKey: string | undefined
+): "form" | "table" | "rules" | "query" | "auto" | "other" {
+  const keyToInspect = preferredKey && parseAutoKey(key) ? preferredKey : key;
+
+  if (parseAutoKey(keyToInspect)) {
+    return "auto";
+  }
+
+  const structured = keyToInspect.match(/^[a-z0-9_.]+\.(form|table|rules|query)\./);
+  if (structured) {
+    return structured[1] as "form" | "table" | "rules" | "query";
+  }
+
+  return "other";
+}
+
+function uniqueSorted(items: string[]): string[] {
+  return [...new Set(items)].sort((left, right) => left.localeCompare(right));
+}
+
+function countByFile(matches: ScanMatch[]): Array<{ file_path: string; count: number }> {
+  const counts = new Map<string, number>();
+
+  for (const match of matches) {
+    counts.set(match.filePath, (counts.get(match.filePath) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([filePath, count]) => ({ file_path: filePath, count }))
+    .sort((left, right) => {
+      const byCount = right.count - left.count;
+      if (byCount !== 0) {
+        return byCount;
+      }
+      return left.file_path.localeCompare(right.file_path);
+    });
 }
 
 const QUERY_GROUP_ROOTS = new Set(["query", "queryparams"]);
