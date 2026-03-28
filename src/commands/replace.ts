@@ -1,6 +1,6 @@
 import type { CommandOptions } from "../core/types.js";
 import type { Logger } from "../cli/logger.js";
-import { extractEntries } from "../extractor/extract.js";
+import { extractEntriesWithDiagnostics } from "../extractor/extract.js";
 import { replaceProject } from "../replacer/replace.js";
 import { scanProject } from "../scanner/scan.js";
 import {
@@ -28,7 +28,8 @@ export function runReplaceCommand(options: CommandOptions, logger: Logger): numb
   const scriptRules = resolveScriptRules(options, logger);
   const matches = scanProject(options.targetDir, scriptRules);
   const existingResources = loadResourceMap(options.outputFile, options.resourceStructure);
-  const entries = extractEntries(matches, existingResources, options.targetDir, options.resourceStructure);
+  const extraction = extractEntriesWithDiagnostics(matches, existingResources, options.targetDir, options.resourceStructure);
+  const entries = extraction.entries;
   const report = replaceProject(options.targetDir, entries, options.dryRun, scriptRules);
   const reusedCount = entries.filter((entry) => entry.reused).length;
   const createdCount = entries.length - reusedCount;
@@ -60,7 +61,7 @@ export function runReplaceCommand(options: CommandOptions, logger: Logger): numb
   }
 
   logger.info(`\n${options.dryRun ? "Planned" : "Applied"} ${report.changes.length} replacement(s).`);
-  writeReport(createBaseReport("replace", options, {
+  const baseReport = createBaseReport("replace", options, {
     filesScanned: countSourceFiles(options.targetDir),
     candidatesFound: matches.length,
     replacedCount: report.changes.length,
@@ -75,7 +76,9 @@ export function runReplaceCommand(options: CommandOptions, logger: Logger): numb
     unchangedFiles: report.unchangedFiles,
     keyReusedCount: reusedCount,
     keyCreatedCount: createdCount
-  }, details), options.reportFile);
+  }, details);
+  baseReport.key_decisions = extraction.diagnostics.key_decisions ?? [];
+  writeReport(baseReport, options.reportFile);
 
   return 0;
 }

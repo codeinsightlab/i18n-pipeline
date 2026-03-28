@@ -91,6 +91,24 @@
   - `<module>.form.<field>.label`
   - `<module>.form.<field>.placeholder`
 
+### 3.5) final key 决策口径（新增，优先级高）
+
+核心原则：
+
+- final key 只有一个决策源，不允许 report 二次猜测。
+- candidate key 只作为辅助追溯信息，不是默认主展示 key。
+
+当前实现口径：
+
+- extract 阶段产出统一 `key_decisions`。
+- `key_decisions` 至少包含：
+  - `occurrence_id`
+  - `text / rule_type`
+  - `candidate_key`（可选）
+  - `final_key`（主）
+  - `decision_reason / status`（可选）
+- replace/apply 与 report 都应消费同一份决策结果。
+
 ### 4) module-dir 资源落盘口径
 
 - 模块前缀由文件路径承载（按模块文件拆分）。

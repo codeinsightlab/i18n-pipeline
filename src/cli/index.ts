@@ -12,6 +12,7 @@ import { runInitScriptRulesCommand } from "../commands/init-script-rules.js";
 import { runReportCommand } from "../commands/report.js";
 import { runReplaceCommand } from "../commands/replace.js";
 import { runScanCommand } from "../commands/scan.js";
+import { toDisplayPath } from "../core/display-path.js";
 import { formatHelp } from "./help.js";
 import { createLogger } from "./logger.js";
 import { CliUsageError, parseCliArgs } from "./parse-args.js";
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
 
     const logger = createLogger(parsed.options.debug);
     logger.debug(`command=${parsed.command}`);
+    printResolvedOptions(parsed.command, parsed.options, logger);
 
     switch (parsed.command) {
       case "scan":
@@ -75,6 +77,32 @@ async function main(): Promise<void> {
     console.error(message);
     process.exitCode = EXIT_CODE_RUNTIME_ERROR;
   }
+}
+
+function printResolvedOptions(
+  command: string,
+  options: {
+    targetDir: string;
+    outputFile: string;
+    reportFile?: string;
+    reportHtmlFile?: string;
+    resourceStructure: string;
+    extractMode: string;
+  },
+  logger: { info: (message: string) => void }
+): void {
+  if (command === "init" || command === "init-script-rules") {
+    return;
+  }
+
+  logger.info("[resolved]");
+  logger.info(`source dir: ${toDisplayPath(options.targetDir)}`);
+  logger.info(`output path: ${toDisplayPath(options.outputFile)}`);
+  const displayReportPath = options.reportHtmlFile ?? options.reportFile;
+  logger.info(`report path: ${displayReportPath ? toDisplayPath(displayReportPath) : "(disabled)"}`);
+  logger.info(`structure: ${options.resourceStructure}`);
+  logger.info(`mode: ${options.extractMode}`);
+  logger.info("");
 }
 
 function readVersion(): string {

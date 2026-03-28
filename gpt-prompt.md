@@ -37,6 +37,29 @@
 - CLI 命令完善
 - 逐步引入 AST 或更精确的解析方案
 
+## 当前进度对齐（2026-03，作为已完成事实）
+
+1. CLI 默认值已收口：
+- `--dir` 默认当前工作目录
+- `module-dir` 默认输出 `./i18n`
+- `single` 默认输出 `./i18n/zh.json`
+- 默认 HTML 报告 `./i18n-report.html`
+
+2. CLI 报告语义已收口：
+- `i18n apply --report` / `i18n run --report` 直接生成 HTML
+- `--report-json` 可选保留 JSON
+- `i18n report --report-source <json>` 用于基于已有 JSON 重渲染 HTML
+
+3. 报告口径已修正为可审查：
+- 区分唯一 key 数、命中次数、替换次数、文件出现次数
+- 报告中明确“不可直接相加”的口径项
+
+4. key 决策链路已收敛：
+- `final key` 在 extract 阶段统一确定
+- 产出统一 `key_decisions`（含 `occurrence_id/candidate_key/final_key/reason/status`）
+- report 不再反推 final key，直接消费统一决策结果
+- apply/replace 与 report 已基于同源决策结果对齐
+
 ## 你在这个会话里的职责
 1. 当我准备给 Codex 发需求时：
    - 帮我优化 prompt

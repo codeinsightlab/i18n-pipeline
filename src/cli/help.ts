@@ -18,12 +18,13 @@ Commands:
 
 Common Options:
   --dir <path>       Target directory (default: current working directory)
-  --output <file>    Output zh.json path (default: ./i18n/zh.json)
+  --output <path>    Output path (default: ./i18n for module-dir, ./i18n/zh.json for single)
   --script-rules <file> Enable external script business rules from JSON
   --structure <type> Resource structure: module-dir (default) | single
   --mode <name>      Resource update mode: merge (default) | clean
   --git-check <mode> Apply Git safety check: warn | strict | off
-  --report <file>    Report file path (JSON for scan/extract/replace/run/apply, HTML for report)
+  --report [file]    Generate HTML report (run/apply/report). Default: ./i18n-report.html
+  --report-json [file] Keep JSON report for run/apply. Default: ./i18n-report.json
   --report-source <file> Use existing JSON log/report as report input (for report command)
   --out <path>       Output file or directory (used by init/init-script-rules)
   --dry-run          Preview replacements without writing files
@@ -34,6 +35,7 @@ Common Options:
 Notes:
   - Without --script-rules: assignment/call business script rules are disabled.
   - Built-in rules.message remains enabled even without --script-rules.
+  - Legacy compatibility: run/apply "--report <xxx.json>" still means JSON-only (not recommended).
   - Use "i18n init ./", "i18n init --out ./", or
     "i18n init-script-rules --out ./i18n/script-rules.json" to bootstrap a rules file.
 
@@ -47,8 +49,9 @@ Examples:
   i18n init --out ./
   i18n init-script-rules --out ./i18n/script-rules.json
   i18n run --dir ./src
-  i18n apply --dir ./src --output ./i18n/zh.json --git-check strict
-  i18n report --dir ./src --report ./output/i18n-report.html
+  i18n apply --dir ./src --output ./i18n --git-check strict --report
+  i18n apply --dir ./src --output ./i18n --report ./output/apply-report.html --report-json
+  i18n report --dir ./src --report
   i18n report --dir ./src --report-source ./output/apply-report.json --report ./output/apply-report.html
 `;
 }

@@ -45,18 +45,19 @@ function buildParsedArgs(
   showHelp: boolean,
   showVersion: boolean
 ): ParsedCliArgs {
-  validateArgs(args);
+  validateArgs(args, command);
   const positionalArgs = collectPositionalArgs(args);
 
   const targetDir = readFlagValue(args, "--dir") ?? process.cwd();
-  const outputFile = readFlagValue(args, "--output") ?? path.resolve(process.cwd(), "i18n/zh.json");
-  const reportFile = readFlagValue(args, "--report");
-  const reportSourceFile = readFlagValue(args, "--report-source");
-  const scriptRulesFile = readFlagValue(args, "--script-rules");
-  const initOutFile = readFlagValue(args, "--out") ?? (isInitCommand(command) ? positionalArgs[0] : undefined);
   const resourceStructure = readFlagValue(args, "--structure") ?? "module-dir";
   const extractMode = readFlagValue(args, "--mode") ?? "merge";
   const gitCheck = readFlagValue(args, "--git-check") ?? "warn";
+  const outputFile = readFlagValue(args, "--output") ?? defaultOutputPath(resourceStructure);
+  const report = readOptionalPathFlag(args, "--report");
+  const reportJson = readOptionalPathFlag(args, "--report-json");
+  const reportSourceFile = readFlagValue(args, "--report-source");
+  const scriptRulesFile = readFlagValue(args, "--script-rules");
+  const initOutFile = readFlagValue(args, "--out") ?? (isInitCommand(command) ? positionalArgs[0] : undefined);
 
   if (isInitCommand(command) && positionalArgs.length > 1) {
     throw new CliUsageError("init accepts at most one positional path.");
@@ -80,6 +81,8 @@ function buildParsedArgs(
     throw new CliUsageError(`Invalid --git-check value: ${gitCheck}. Use warn, strict, or off.`);
   }
 
+  const resolvedReports = resolveReportOptions(command, report, reportJson);
+
   return {
     command,
     initOutFile: initOutFile ? path.resolve(initOutFile) : undefined,
@@ -101,18 +104,37 @@ function buildParsedArgs(
         gitCheck: args.includes("--git-check")
       },
       scriptRulesFile: scriptRulesFile ? path.resolve(scriptRulesFile) : undefined,
-      reportFile: reportFile ? path.resolve(reportFile) : undefined,
+      reportFile: resolvedReports.reportFile ? path.resolve(resolvedReports.reportFile) : undefined,
+      reportHtmlFile: resolvedReports.reportHtmlFile ? path.resolve(resolvedReports.reportHtmlFile) : undefined,
+      keepReportJson: resolvedReports.keepReportJson,
       reportSourceFile: reportSourceFile ? path.resolve(reportSourceFile) : undefined
     }
   };
 }
 
-function validateArgs(args: string[]): void {
-  const valuedFlags = ["--dir", "--output", "--report", "--report-source", "--structure", "--mode", "--git-check", "--script-rules", "--out"];
+function defaultOutputPath(structure: string): string {
+  if (structure === "module-dir") {
+    return path.resolve(process.cwd(), "i18n");
+  }
+
+  return path.resolve(process.cwd(), "i18n/zh.json");
+}
+
+function defaultReportPath(command: CommandName | undefined): string | undefined {
+  if (command !== "report") {
+    return undefined;
+  }
+
+  return path.resolve(process.cwd(), "i18n-report.html");
+}
+
+function validateArgs(args: string[], command: CommandName | undefined): void {
+  const valuedFlags = ["--dir", "--output", "--report-source", "--structure", "--mode", "--git-check", "--script-rules", "--out"];
   const allowedFlags = new Set([
     "--dir",
     "--output",
     "--report",
+    "--report-json",
     "--report-source",
     "--structure",
     "--mode",
@@ -135,6 +157,14 @@ function validateArgs(args: string[]): void {
     }
   }
 
+  // Legacy step commands keep explicit --report <file> to avoid accidental writes.
+  if ((command === "scan" || command === "extract" || command === "replace") && args.includes("--report")) {
+    const report = readOptionalPathFlag(args, "--report");
+    if (!report.value) {
+      throw new CliUsageError("Missing value for --report.");
+    }
+  }
+
   for (const arg of args) {
     if (arg.startsWith("-") && !allowedFlags.has(arg)) {
       throw new CliUsageError(`Unknown flag: ${arg}.`);
@@ -150,6 +180,80 @@ function readFlagValue(args: string[], flag: string): string | undefined {
   }
 
   return args[index + 1];
+}
+
+function readOptionalPathFlag(args: string[], flag: string): { present: boolean; value?: string } {
+  const index = args.indexOf(flag);
+
+  if (index === -1) {
+    return { present: false };
+  }
+
+  const next = args[index + 1];
+  if (!next || next.startsWith("-")) {
+    return { present: true };
+  }
+
+  return { present: true, value: next };
+}
+
+function resolveReportOptions(
+  command: CommandName | undefined,
+  report: { present: boolean; value?: string },
+  reportJson: { present: boolean; value?: string }
+): { reportFile?: string; reportHtmlFile?: string; keepReportJson: boolean } {
+  const defaultHtml = path.resolve(process.cwd(), "i18n-report.html");
+  const defaultJson = path.resolve(process.cwd(), "i18n-report.json");
+
+  if (command === "report") {
+    const reportFile = report.present
+      ? path.resolve(report.value ?? defaultHtml)
+      : defaultReportPath(command);
+    return {
+      reportFile,
+      keepReportJson: true
+    };
+  }
+
+  if (command === "run" || command === "apply") {
+    let reportHtmlFile: string | undefined;
+    let reportFile: string | undefined;
+    let keepReportJson = false;
+
+    if (report.present) {
+      const reportValue = path.resolve(report.value ?? defaultHtml);
+      if (report.value && reportValue.toLowerCase().endsWith(".json") && !reportJson.present) {
+        // Backward compatibility: old `--report <json>` keeps JSON-only behavior.
+        reportFile = reportValue;
+        keepReportJson = true;
+      } else {
+        reportHtmlFile = reportValue;
+      }
+    }
+
+    if (reportJson.present) {
+      reportFile = path.resolve(reportJson.value ?? defaultJson);
+      keepReportJson = true;
+    }
+
+    return {
+      reportFile,
+      reportHtmlFile,
+      keepReportJson
+    };
+  }
+
+  if (command === "scan" || command === "extract" || command === "replace") {
+    const reportFile = report.value ? path.resolve(report.value) : undefined;
+    return {
+      reportFile,
+      keepReportJson: Boolean(reportFile)
+    };
+  }
+
+  return {
+    keepReportJson: false
+  };
 }
 
 function isCommandName(value: string): value is CommandName {
@@ -177,11 +281,19 @@ function isInitCommand(command: CommandName | undefined): boolean {
 }
 
 function collectPositionalArgs(args: string[]): string[] {
-  const valuedFlags = new Set(["--dir", "--output", "--report", "--report-source", "--structure", "--mode", "--git-check", "--script-rules", "--out"]);
+  const valuedFlags = new Set(["--dir", "--output", "--report-source", "--structure", "--mode", "--git-check", "--script-rules", "--out"]);
   const positional: string[] = [];
 
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
+
+    if (token === "--report" || token === "--report-json") {
+      const next = args[index + 1];
+      if (next && !next.startsWith("-")) {
+        index += 1;
+      }
+      continue;
+    }
 
     if (valuedFlags.has(token)) {
       index += 1;

@@ -4,6 +4,7 @@ import type {
   ExtractConflictDiagnostic,
   ExtractEntriesResult,
   ExtractItem,
+  KeyDecisionRecord,
   ExtractScopeDiagnostic,
   ScanMatch
 } from "../core/types.js";
@@ -49,6 +50,7 @@ function buildExtractionResult(
   const fileContentCache = new Map<string, string>();
   const conflicts: ExtractConflictDiagnostic[] = [];
   const scopes: ExtractScopeDiagnostic[] = [];
+  const keyDecisions: KeyDecisionRecord[] = [];
 
   for (const [key, text] of existingResources) {
     usedKeys.add(key);
@@ -217,6 +219,8 @@ function buildExtractionResult(
       }
     }
 
+    const initialCandidateKey = preferredKey ?? existingKey;
+
     if (!scopeToKey.has(scope) && existingKey) {
       scopeToKey.set(scope, existingKey);
     }
@@ -287,6 +291,46 @@ function buildExtractionResult(
         context_type: item.contextType
       }))
     });
+
+    const decisionStatus = resolveDecisionStatus(initialCandidateKey, finalKey, existingKey, pendingConflicts);
+    const decisionReason = resolveDecisionReason(initialCandidateKey, finalKey, existingKey, pendingConflicts, preferredKey, isAuto);
+    const candidateKey = initialCandidateKey ?? pendingConflicts[0]?.candidateKey;
+    const sortedMatches = [...sourceMatches].sort((left, right) => {
+      const byFile = left.filePath.localeCompare(right.filePath);
+      if (byFile !== 0) {
+        return byFile;
+      }
+      const byLine = left.line - right.line;
+      if (byLine !== 0) {
+        return byLine;
+      }
+      const byColumn = left.column - right.column;
+      if (byColumn !== 0) {
+        return byColumn;
+      }
+      const byRule = left.matchedRule.localeCompare(right.matchedRule);
+      if (byRule !== 0) {
+        return byRule;
+      }
+      return left.raw.localeCompare(right.raw);
+    });
+
+    sortedMatches.forEach((item, index) => {
+      keyDecisions.push({
+        occurrence_id: buildOccurrenceId(item, index),
+        file_path: item.filePath,
+        text: item.text,
+        rule_type: item.matchedRule,
+        candidate_key: candidateKey,
+        final_key: finalKey,
+        decision_reason: decisionReason,
+        status: decisionStatus,
+        loc: {
+          line: item.line,
+          column: item.column
+        }
+      });
+    });
   }
 
   const entries = sortedScopes.map((scope) => ({
@@ -301,6 +345,7 @@ function buildExtractionResult(
     entries,
     diagnostics: {
       scopes: scopes.sort((left, right) => left.key.localeCompare(right.key)),
+      key_decisions: keyDecisions.sort((left, right) => left.occurrence_id.localeCompare(right.occurrence_id)),
       conflicts: conflicts.sort((left, right) => {
         const byKey = left.candidate_key.localeCompare(right.candidate_key);
         if (byKey !== 0) {
@@ -336,6 +381,72 @@ function classifyAutoReason(
   }
 
   return "conservative_fallback";
+}
+
+function resolveDecisionStatus(
+  candidateKey: string | undefined,
+  finalKey: string,
+  existingKey: string | undefined,
+  conflicts: Array<{ candidateKey: string; reason: string }>
+): "reused" | "generated" | "conflict-resolved" {
+  if (conflicts.length > 0 || (candidateKey && candidateKey !== finalKey)) {
+    return "conflict-resolved";
+  }
+
+  if (existingKey && finalKey === existingKey) {
+    return "reused";
+  }
+
+  return "generated";
+}
+
+function resolveDecisionReason(
+  candidateKey: string | undefined,
+  finalKey: string,
+  existingKey: string | undefined,
+  conflicts: Array<{ candidateKey: string; reason: string }>,
+  preferredKey: string | undefined,
+  isAuto: boolean
+): string {
+  if (candidateKey && candidateKey !== finalKey) {
+    if (existingKey && finalKey === existingKey) {
+      return "reused_existing_stable_key";
+    }
+    if (isAuto) {
+      return "fallback_auto_after_conflict";
+    }
+    return "candidate_key_rewritten";
+  }
+
+  if (conflicts.length > 0) {
+    return conflicts[0]?.reason ?? "conflict_resolved";
+  }
+
+  if (existingKey && finalKey === existingKey) {
+    return "reused_existing_key";
+  }
+
+  if (preferredKey && finalKey === preferredKey) {
+    return "preferred_key_selected";
+  }
+
+  return isAuto ? "generated_auto_key" : "generated_structured_key";
+}
+
+function buildOccurrenceId(match: ScanMatch, index: number): string {
+  return [
+    normalizeOccurrenceField(match.filePath),
+    match.line,
+    match.column,
+    normalizeOccurrenceField(match.matchedRule),
+    normalizeOccurrenceField(match.contextType),
+    normalizeOccurrenceField(match.text),
+    index
+  ].join("::");
+}
+
+function normalizeOccurrenceField(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function deriveScopeGroup(

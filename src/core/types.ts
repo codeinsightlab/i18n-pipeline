@@ -111,11 +111,27 @@ export interface ExtractConflictDiagnostic {
 export interface ExtractDiagnostics {
   scopes: ExtractScopeDiagnostic[];
   conflicts: ExtractConflictDiagnostic[];
+  key_decisions?: KeyDecisionRecord[];
 }
 
 export interface ExtractEntriesResult {
   entries: ExtractItem[];
   diagnostics: ExtractDiagnostics;
+}
+
+export interface KeyDecisionRecord {
+  occurrence_id: string;
+  file_path: string;
+  text: string;
+  rule_type: MatchedRule;
+  candidate_key?: string;
+  final_key: string;
+  decision_reason?: string;
+  status?: "reused" | "generated" | "conflict-resolved";
+  loc?: {
+    line?: number;
+    column?: number;
+  };
 }
 
 export interface ReplaceChange {
@@ -163,12 +179,15 @@ export interface CommandOptions {
   };
   scriptRulesFile?: string;
   reportFile?: string;
+  reportHtmlFile?: string;
+  keepReportJson?: boolean;
   reportSourceFile?: string;
 }
 
 export interface BaseReport {
   summary: ReportSummary;
   details: FileReportDetail[];
+  key_decisions?: KeyDecisionRecord[];
 }
 
 export interface ReportSummary {

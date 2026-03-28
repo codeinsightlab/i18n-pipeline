@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { CommandOptions } from "../core/types.js";
@@ -7,6 +8,7 @@ import { extractModulePrefix } from "../core/keygen.js";
 import { toDisplayPath } from "../core/display-path.js";
 import { ensureParentDir } from "../core/files.js";
 import { runExtractCommand } from "./extract.js";
+import { runReportCommand } from "./report.js";
 import { runReplaceCommand } from "./replace.js";
 import { runScanCommand } from "./scan.js";
 
@@ -14,10 +16,11 @@ export function runRunCommand(options: CommandOptions, logger: Logger): number {
   logger.debug("run pipeline: scan -> extract -> replace --dry-run");
   // run 是“评估模式”：始终 dry-run replace，用于先看覆盖率与风险，不改源码。
   printConfigSummary("run", options, logger);
+  const reportPlan = resolveCompositeReportPlan("run", options);
 
-  const scanOptions = withStepReport(options, "scan");
-  const extractOptions = withStepReport({ ...options, writeResources: false }, "extract");
-  const replaceOptions = withStepReport({ ...options, dryRun: true }, "replace");
+  const scanOptions = withStepReport({ ...options, reportFile: reportPlan.compositeJsonPath }, "scan");
+  const extractOptions = withStepReport({ ...options, writeResources: false, reportFile: reportPlan.compositeJsonPath }, "extract");
+  const replaceOptions = withStepReport({ ...options, dryRun: true, reportFile: reportPlan.compositeJsonPath }, "replace");
   const scanExitCode = runScanCommand(scanOptions, logger);
   if (scanExitCode !== 0) {
     return scanExitCode;
@@ -33,11 +36,12 @@ export function runRunCommand(options: CommandOptions, logger: Logger): number {
     return replaceExitCode;
   }
 
-  writeCompositeReport("run", options, {
+  writeCompositeReport("run", { ...options, reportFile: reportPlan.compositeJsonPath }, {
     scan: scanOptions.reportFile,
     extract: extractOptions.reportFile,
     replace: replaceOptions.reportFile
   }, logger);
+  finalizeCompositeReport("run", reportPlan, options, logger);
 
   return 0;
 }
@@ -46,8 +50,9 @@ export function runApplyCommand(options: CommandOptions, logger: Logger): number
   logger.debug("apply pipeline: extract -> replace");
   // apply 是“落地模式”：先做 git 工作区检查，再执行真实写入。
   printConfigSummary("apply", options, logger);
-  const extractOptions = withStepReport(options, "extract");
-  const replaceOptions = withStepReport(options, "replace");
+  const reportPlan = resolveCompositeReportPlan("apply", options);
+  const extractOptions = withStepReport({ ...options, reportFile: reportPlan.compositeJsonPath }, "extract");
+  const replaceOptions = withStepReport({ ...options, reportFile: reportPlan.compositeJsonPath }, "replace");
   const gitCheckExitCode = handleGitWorkspaceCheck(options.targetDir, options.gitCheck, logger);
   if (gitCheckExitCode !== 0) {
     return gitCheckExitCode;
@@ -63,10 +68,11 @@ export function runApplyCommand(options: CommandOptions, logger: Logger): number
     return replaceExitCode;
   }
 
-  writeCompositeReport("apply", options, {
+  writeCompositeReport("apply", { ...options, reportFile: reportPlan.compositeJsonPath }, {
     extract: extractOptions.reportFile,
     replace: replaceOptions.reportFile
   }, logger);
+  finalizeCompositeReport("apply", reportPlan, options, logger);
 
   return 0;
 }
@@ -80,6 +86,90 @@ function withStepReport(options: CommandOptions, step: "scan" | "extract" | "rep
     ...options,
     reportFile: deriveStepReportFile(options.reportFile, step)
   };
+}
+
+interface CompositeReportPlan {
+  compositeJsonPath?: string;
+  htmlPath?: string;
+  keepJson: boolean;
+  temporaryJson: boolean;
+}
+
+function resolveCompositeReportPlan(command: "run" | "apply", options: CommandOptions): CompositeReportPlan {
+  // Legacy mode: --report <json> for run/apply keeps old JSON-only behavior.
+  if (!options.reportHtmlFile && options.reportFile) {
+    return {
+      compositeJsonPath: options.reportFile,
+      keepJson: true,
+      temporaryJson: false
+    };
+  }
+
+  if (options.reportHtmlFile) {
+    if (options.reportFile) {
+      return {
+        compositeJsonPath: options.reportFile,
+        htmlPath: options.reportHtmlFile,
+        keepJson: Boolean(options.keepReportJson),
+        temporaryJson: false
+      };
+    }
+
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const tempJson = path.join(os.tmpdir(), `i18n-${command}-${stamp}.json`);
+    return {
+      compositeJsonPath: tempJson,
+      htmlPath: options.reportHtmlFile,
+      keepJson: false,
+      temporaryJson: true
+    };
+  }
+
+  return {
+    compositeJsonPath: options.reportFile,
+    keepJson: Boolean(options.keepReportJson || options.reportFile),
+    temporaryJson: false
+  };
+}
+
+function finalizeCompositeReport(
+  command: "run" | "apply",
+  plan: CompositeReportPlan,
+  options: CommandOptions,
+  logger: Logger
+): void {
+  if (!plan.compositeJsonPath) {
+    return;
+  }
+
+  if (plan.htmlPath) {
+    runReportCommand({
+      ...options,
+      reportFile: plan.htmlPath,
+      reportSourceFile: plan.compositeJsonPath
+    }, logger);
+  }
+
+  if (plan.keepJson) {
+    return;
+  }
+
+  cleanupStepReports(plan.compositeJsonPath);
+}
+
+function cleanupStepReports(compositeJsonPath: string): void {
+  const stepFiles = [
+    compositeJsonPath,
+    deriveStepReportFile(compositeJsonPath, "scan"),
+    deriveStepReportFile(compositeJsonPath, "extract"),
+    deriveStepReportFile(compositeJsonPath, "replace")
+  ];
+
+  for (const filePath of stepFiles) {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
 }
 
 function deriveStepReportFile(reportFile: string, step: "scan" | "extract" | "replace"): string {

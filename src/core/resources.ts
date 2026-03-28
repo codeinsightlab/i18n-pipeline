@@ -14,7 +14,7 @@ export function loadResourceMap(
     return loadSingleResourceFile(outputFile);
   }
 
-  const rootDir = path.dirname(outputFile);
+  const rootDir = resolveModuleResourceRoot(outputFile);
   const resourceFiles = listModuleResourceFiles(rootDir);
   const resources = new Map<string, string>();
 
@@ -84,7 +84,7 @@ export function writeResourceMap(
 }
 
 export function modulePrefixToResourceFile(modulePrefix: string, outputFile: string): string {
-  return path.join(path.dirname(outputFile), ...modulePrefix.split("."), RESOURCE_FILE_NAME);
+  return path.join(resolveModuleResourceRoot(outputFile), ...modulePrefix.split("."), RESOURCE_FILE_NAME);
 }
 
 export function keyToResourceFile(
@@ -276,7 +276,7 @@ function joinModuleAndRelative(modulePrefix: string, relativeKey: string): strin
 }
 
 function resourceFileToModulePrefix(filePath: string, outputFile: string): string | null {
-  const rootDir = path.dirname(outputFile);
+  const rootDir = resolveModuleResourceRoot(outputFile);
   const relativePath = path.relative(rootDir, filePath);
   const normalized = relativePath.split(path.sep).filter(Boolean);
 
@@ -286,4 +286,9 @@ function resourceFileToModulePrefix(filePath: string, outputFile: string): strin
 
   const segments = normalized.slice(0, -1);
   return segments.join(".");
+}
+
+function resolveModuleResourceRoot(outputFile: string): string {
+  const normalized = outputFile.replace(/\\/g, "/");
+  return normalized.endsWith(`/${RESOURCE_FILE_NAME}`) ? path.dirname(outputFile) : outputFile;
 }

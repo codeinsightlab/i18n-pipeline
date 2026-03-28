@@ -16,6 +16,14 @@
   - `rules.message` 仍保留为内置结构能力
 - report 已增加：
   - `summary.script_rules_enabled`（true/false）
+- CLI 报告语义已收口：
+  - `i18n apply/run --report` 直接生成 HTML
+  - `--report-json` 可选保留 JSON
+  - `i18n report --report-source <json>` 用于基于 JSON 重渲染 HTML
+- key 决策已收敛：
+  - extract 产出统一 `key_decisions`
+  - report 不再通过候选态反推 final key
+  - apply/report 使用同源 final key 决策结果
 - 已修复真实页白名单漏替换问题（template 文本尾空格口径一致性）。
 
 ## 下一会话唯一目标（必须单点聚焦）
@@ -54,8 +62,9 @@
 ```bash
 i18n init-script-rules --out ./i18n/script-rules.json
 i18n scan --dir <target-dir> --script-rules ./i18n/script-rules.json --report ./logs/scan.json
-i18n run --dir <target-dir> --script-rules ./i18n/script-rules.json --report ./logs/run.json
-i18n apply --dir <target-dir> --script-rules ./i18n/script-rules.json --report ./logs/apply.json
+i18n run --dir <target-dir> --script-rules ./i18n/script-rules.json --report ./logs/run.html --report-json ./logs/run.json
+i18n apply --dir <target-dir> --script-rules ./i18n/script-rules.json --report ./logs/apply.html --report-json ./logs/apply.json
+i18n report --report-source ./logs/apply.json --report ./logs/apply-rerender.html
 ```
 
 > 若要验证“未启用外部业务 script 规则”的基线，去掉 `--script-rules`。
@@ -109,5 +118,8 @@ i18n apply --dir <target-dir> --script-rules ./i18n/script-rules.json --report .
 2) 白名单内是否命中并替换
 3) 策略性未覆盖项（非 bug）
 4) 真 bug（若有）
+并补充：
+5) key_decisions 中 final_key 与最终文件写入 key 是否一致
+6) report 是否直接消费 final_key（而非二次反推）
 最后给出是否可继续小范围试用的结论。
 ```

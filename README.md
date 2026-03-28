@@ -114,17 +114,22 @@
 ## 全局参数
 
 - `--dir <path>`: 目标源码目录（默认当前工作目录）
-- `--output <file>`: 资源输出入口（默认 `./i18n/zh.json`）
+- `--output <path>`: 资源输出入口（`module-dir` 默认 `./i18n`；`single` 默认 `./i18n/zh.json`）
 - `--structure <type>`: `module-dir`（默认）或 `single`
 - `--mode <name>`: `merge`（默认）或 `clean`（兼容 `overwrite`，内部会归一为 `merge`）
 - `--script-rules <file>`: 外部 script 规则文件
-- `--report <file>`: 报告输出文件
+- `--report [file]`: 生成 HTML 报告（`run/apply/report` 可用，默认 `./i18n-report.html`）
+- `--report-json [file]`: 保留 JSON 报告（`run/apply` 可用，默认 `./i18n-report.json`）
 - `--report-source <file>`: report 日志回放输入
 - `--git-check <mode>`: `warn`（默认）/`strict`/`off`（apply 使用）
 - `--out <path>`: `init` / `init-script-rules` 的输出目录或文件
 - `--dry-run`: replace 预览不落盘
 - `--debug`: 调试日志
 - `--help` / `--version`
+
+兼容说明：
+- 旧用法 `i18n run/apply --report <xxx.json>` 仍兼容为“仅输出 JSON”（不推荐）。
+- 新推荐用法：`--report` 产 HTML，`--report-json` 按需保留 JSON。
 
 ### `i18n scan`
 
@@ -139,7 +144,7 @@ i18n scan --dir ./src
 生成/更新资源 key。
 
 ```bash
-i18n extract --dir ./src --output ./i18n/zh.json
+i18n extract --dir ./src --output ./i18n
 ```
 
 ### `i18n replace`
@@ -147,7 +152,7 @@ i18n extract --dir ./src --output ./i18n/zh.json
 按当前资源映射执行替换（可 dry-run）。
 
 ```bash
-i18n replace --dir ./src --output ./i18n/zh.json --dry-run
+i18n replace --dir ./src --output ./i18n --dry-run
 ```
 
 ### `i18n run`
@@ -155,7 +160,7 @@ i18n replace --dir ./src --output ./i18n/zh.json --dry-run
 评估链路：`scan -> extract -> replace --dry-run`。
 
 ```bash
-i18n run --dir ./src --output ./i18n/zh.json
+i18n run --dir ./src --output ./i18n --report
 ```
 
 ### `i18n apply`
@@ -163,7 +168,7 @@ i18n run --dir ./src --output ./i18n/zh.json
 落地链路：`extract -> replace`。
 
 ```bash
-i18n apply --dir ./src --output ./i18n/zh.json --git-check strict
+i18n apply --dir ./src --output ./i18n --git-check strict --report
 ```
 
 ### `i18n report`
@@ -171,7 +176,7 @@ i18n apply --dir ./src --output ./i18n/zh.json --git-check strict
 生成静态 HTML 报告（同时产出同名 JSON）。
 
 ```bash
-i18n report --dir ./src --output ./i18n/zh.json --report ./output/i18n-report.html
+i18n report --dir ./src --output ./i18n --report
 ```
 
 ### `i18n init` / `i18n init-script-rules`
@@ -188,10 +193,9 @@ i18n init-script-rules --out ./i18n/script-rules.json
 
 `i18n report` 支持两种语义：
 
-1. Preview 模式（预期视图）
-- 不传 `--report-source`
-- 走 apply 同口径预演（extract + replace dry-run）
-- 用于“还没执行 apply”时预判结果
+1. 直接生成模式（默认面向用户）
+- `i18n apply --report` / `i18n run --report`：直接生成 HTML 报告
+- 若需保留 JSON：追加 `--report-json`
 
 2. Replay 模式（执行复盘）
 - 传 `--report-source <json>`
@@ -227,13 +231,13 @@ i18n report \
 推荐流程（收口期）：
 
 ```bash
-# 1) 预期视图（执行前）
-i18n report --dir ./src --output ./i18n/zh.json --report ./output/pre-apply.html
+# 1) 执行并直接拿 HTML（执行后立即可读）
+i18n apply --dir ./src --output ./i18n --report ./output/apply-report.html
 
-# 2) 落地执行（执行中）
-i18n apply --dir ./src --output ./i18n/zh.json --report ./output/apply-report.json
+# 2) 如需保留 JSON（调试/复渲染）
+i18n apply --dir ./src --output ./i18n --report ./output/apply-report.html --report-json ./output/apply-report.json
 
-# 3) 执行复盘（执行后）
+# 3) 基于 JSON 复渲染（高级用法）
 i18n report --dir ./src --report-source ./output/apply-report.json --report ./output/apply-replay.html
 ```
 
